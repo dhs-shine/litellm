@@ -79,10 +79,10 @@ ingress:
 # masterkey: changeit
 
 # if set, use this secret for the master key; otherwise, autogenerate a new one
-masterkeySecretName: ""
+masterkeySecretName: litellm-master-key
 
 # if set, use this secret key for the master key; otherwise, use the default key
-masterkeySecretKey: ""
+masterkeySecretKey: master-key
 
 # The elements within proxy_config are rendered as config.yaml for the proxy
 #  Examples: https://github.com/BerriAI/litellm/tree/main/litellm/proxy/example_config_yaml
@@ -114,7 +114,7 @@ proxy_config:
         input_cost_per_token: 0.000015
         output_cost_per_token: 0.000015
   general_settings:
-    master_key: os.environ/PROXY_MASTER_KEY
+    master_key: os.environ/MASTER_KEY
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
@@ -222,5 +222,3 @@ extraEnvVars: {
     # - name: EXTRA_ENV_VAR
     #   value: EXTRA_ENV_VAR_VALUE
 }
-
-
