@@ -46,7 +46,8 @@ securityContext: {}
 # A list of Kubernetes Secret objects that will be exported to the LiteLLM proxy
 #  pod as environment variables.  These secrets can then be referenced in the
 #  configuration file (or "litellm" ConfigMap) with `os.environ/<Env Var Name>`
-environmentSecrets: []
+environmentSecrets:
+  - gemini-api-key
   # - litellm-env-secret
 
 # A list of Kubernetes ConfigMap objects that will be exported to the LiteLLM proxy
@@ -91,41 +92,41 @@ proxy_config:
     - model_name: gemini-2.5-pro-preview-03-25 # litellm에서 사용할 모델 별칭
       litellm_params:
         model: gemini/gemini-2.5-pro-preview-03-25 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
-        api_key: os.environ/GEMINI_API_KEY #
+        api_key: os.environ/GEMINI_API_KEY
         input_cost_per_token: 0.000015
         output_cost_per_token: 0.000015
     - model_name: gemini-2.5-pro-exp-03-25 # litellm에서 사용할 모델 별칭
       litellm_params:
         model: gemini/gemini-2.5-pro-exp-03-25 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
-        api_key: os.environ/GEMINI_API_KEY #
+        api_key: os.environ/GEMINI_API_KEY
         input_cost_per_token: 0.000015
         output_cost_per_token: 0.000015
     - model_name: gemini-2.5-flash-preview-04-17 # litellm에서 사용할 모델 별칭
       litellm_params:
         model: gemini/gemini-2.5-flash-preview-04-17 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
-        api_key: os.environ/GEMINI_API_KEY #
+        api_key: os.environ/GEMINI_API_KEY
         input_cost_per_token: 0.000015
         output_cost_per_token: 0.000015
     - model_name: gemini-2.0-flash-exp # litellm에서 사용할 모델 별칭
       litellm_params:
         model: gemini/gemini-2.0-flash-exp # 실제 Vertex AI 또는 Google AI Studio 모델 이름
-        api_key: os.environ/GEMINI_API_KEY #
+        api_key: os.environ/GEMINI_API_KEY
         input_cost_per_token: 0.000015
         output_cost_per_token: 0.000015
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
 
-resources:
+resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
   # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  limits:
-    cpu: 500m
-    memory: 1000Mi
-  requests:
-    cpu: 500m
-    memory: 1000Mi
+  #limits:
+  #  cpu: 500m
+  #  memory: 1000Mi
+  #requests:
+  #  cpu: 500m
+  #  memory: 1000Mi
 
 autoscaling:
   enabled: false
