@@ -4,11 +4,19 @@ import jwt
 from fastapi import Request, HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
 import os
-
+from typing import Optional
 # Replace with your actual secret key
 # In a real application, load this from environment variables or a secure config
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-jwt-secret-key")
-ALGORITHM = "HS256" # Or the algorithm you use for signing JWTs
+JWT_PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----your-rsa-public-key-----END PUBLIC KEY-----")
+
+def get_jwt_key(algorithm: str) -> str:
+    if algorithm == "HS256":
+        return JWT_SECRET_KEY
+    elif algorithm == "RS256":
+        return JWT_PUBLIC_KEY
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported algorithm")
 
 async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
     """
@@ -27,7 +35,12 @@ async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
     try:
         # Assuming api_key is the JWT string
         # Decode and verify the JWT
-        payload = jwt.decode(api_key, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        header = jwt.get_unverified_header(api_key)
+        algorithm: Optional[str] = header.get("alg")
+        if algorithm is None:
+            raise HTTPException(status_code=400, detail="Algorithm not specified in JWT header")
+        key = get_jwt_key(algorithm)
+        payload = jwt.decode(api_key, key, algorithms=[algorithm])
 
         # Extract user information from the payload
         # You can customize this based on your JWT payload structure
@@ -44,10 +57,6 @@ async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
         # We use user_id from the payload as the identifier for logging/tracking
         return UserAPIKeyAuth(api_key=user_id, team_id=team_id, max_budget=max_budget)
 
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="JWT has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid JWT token")
     except Exception as e:
         # Catch any other exceptions during processing
         raise HTTPException(status_code=500, detail=f"Authentication failed: {e}")
