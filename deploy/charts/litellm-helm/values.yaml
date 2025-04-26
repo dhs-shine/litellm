@@ -2,11 +2,11 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-replicaCount: 1
+replicaCount: 2
 
 image:
   # Use "ghcr.io/berriai/litellm-database" for optimized image with database
-  repository: ghcr.io/berriai/litellm-database
+  repository: ghcr.io/berriai/litellm
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
   # tag: "main-latest"
@@ -54,7 +54,7 @@ environmentConfigMaps: []
   # - litellm-env-configmap
 
 service:
-  type: ClusterIP
+  type: LoadBalancer
   port: 4000
 
 ingress:
@@ -86,16 +86,30 @@ masterkeySecretKey: ""
 #  Reference: https://docs.litellm.ai/docs/proxy/configs
 proxy_config:
   model_list:
-    # At least one model must exist for the proxy to start.
-    - model_name: gpt-3.5-turbo
+    - model_name: gemini-2.5-pro-preview-03-25 # litellm에서 사용할 모델 별칭
       litellm_params:
-        model: gpt-3.5-turbo
-        api_key: eXaMpLeOnLy
-    - model_name: fake-openai-endpoint
+        model: gemini/gemini-2.5-pro-preview-03-25 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+        api_key: os.environ/GEMINI_API_KEY #
+        input_cost_per_token: 0.000015
+        output_cost_per_token: 0.000015
+    - model_name: gemini-2.5-pro-exp-03-25 # litellm에서 사용할 모델 별칭
       litellm_params:
-        model: openai/fake
-        api_key: fake-key
-        api_base: https://exampleopenaiendpoint-production.up.railway.app/
+        model: gemini/gemini-2.5-pro-exp-03-25 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+        api_key: os.environ/GEMINI_API_KEY #
+        input_cost_per_token: 0.000015
+        output_cost_per_token: 0.000015
+    - model_name: gemini-2.5-flash-preview-04-17 # litellm에서 사용할 모델 별칭
+      litellm_params:
+        model: gemini/gemini-2.5-flash-preview-04-17 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+        api_key: os.environ/GEMINI_API_KEY #
+        input_cost_per_token: 0.000015
+        output_cost_per_token: 0.000015
+    - model_name: gemini-2.0-flash-exp # litellm에서 사용할 모델 별칭
+      litellm_params:
+        model: gemini/gemini-2.0-flash-exp # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+        api_key: os.environ/GEMINI_API_KEY #
+        input_cost_per_token: 0.000015
+        output_cost_per_token: 0.000015
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY
 
@@ -113,7 +127,7 @@ resources: {}
 
 autoscaling:
   enabled: false
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 100
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
@@ -158,7 +172,7 @@ db:
 
   # Use the Postgres Helm chart to create a single node, stand alone postgres
   #  instance.  See the "postgresql" top level key for additional configuration.
-  deployStandalone: true
+  deployStandalone: false
 
 # Settings for Bitnami postgresql chart (if db.deployStandalone is true, ignored
 #  otherwise)
@@ -170,8 +184,8 @@ postgresql:
 
     # You should override these on the helm command line with
     #  `--set postgresql.auth.postgres-password=<some good password>,postgresql.auth.password=<some good password>`
-    password: NoTaGrEaTpAsSwOrD
-    postgres-password: NoTaGrEaTpAsSwOrD
+    password: not-a-password 
+    postgres-password: not-a-password
 
     # A secret is created by this chart (litellm-helm) with the credentials that
     #  the new Postgres instance should use.
@@ -183,12 +197,12 @@ postgresql:
 # either enable this or pass a secret for REDIS_HOST, REDIS_PORT, REDIS_PASSWORD or REDIS_URL
 # with cache: true to use existing redis instance
 redis:
-  enabled: false
+  enabled: true
   architecture: standalone
 
 # Prisma migration job settings
 migrationJob:
-  enabled: true # Enable or disable the schema migration Job
+  enabled: false # Enable or disable the schema migration Job
   retries: 3 # Number of retries for the Job in case of failure
   backoffLimit: 4 # Backoff limit for Job restarts
   disableSchemaUpdate: false # Skip schema migrations for specific environments. When True, the job will exit with code 0.
