@@ -15,7 +15,7 @@ services:
      - "--config=/app/config.yaml"
     ##############################################
     ports:
-      - "14000:4000" # Map the container port to the host, change the host port if necessary
+      - "24000:4000" # Map the container port to the host, change the host port if necessary
     # environment:
     #     DATABASE_URL: "postgresql://llmproxy:dbpassword9090@db:5432/litellm"
     #     STORE_MODEL_IN_DB: "True" # allows adding models to proxy via UI
