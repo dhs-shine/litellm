@@ -1,0 +1,31 @@
+model_list:
+  - model_name: gemini-2.5-pro-preview-03-25 # litellm에서 사용할 모델 별칭
+    litellm_params:
+      model: gemini/gemini-2.5-pro-preview-03-25 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+      api_key: os.environ/GEMINI_API_KEY # 
+      input_cost_per_token: 0.000015
+      output_cost_per_token: 0.000015
+  - model_name: gemini-2.5-pro-exp-03-25 # litellm에서 사용할 모델 별칭
+    litellm_params:
+      model: gemini/gemini-2.5-pro-exp-03-25 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+      api_key: os.environ/GEMINI_API_KEY # 
+      input_cost_per_token: 0.000015
+      output_cost_per_token: 0.000015
+  - model_name: gemini-2.5-flash-preview-04-17 # litellm에서 사용할 모델 별칭
+    litellm_params:
+      model: gemini/gemini-2.5-flash-preview-04-17 # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+      api_key: os.environ/GEMINI_API_KEY # 
+      input_cost_per_token: 0.000015
+      output_cost_per_token: 0.000015
+  - model_name: gemini-2.0-flash-exp # litellm에서 사용할 모델 별칭
+    litellm_params:
+      model: gemini/gemini-2.0-flash-exp # 실제 Vertex AI 또는 Google AI Studio 모델 이름
+      api_key: os.environ/GEMINI_API_KEY # 
+      input_cost_per_token: 0.000015
+      output_cost_per_token: 0.000015
+
+# litellm_settings:
+    # callbacks:
+    #   - "langfuse"
+general_settings:
+  custom_auth: custom_jwt_auth.user_api_key_auth
