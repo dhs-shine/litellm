@@ -70,10 +70,15 @@ ingress:
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: api.example.local
+    - host: localhost
       paths:
-        - path: /
-          pathType: ImplementationSpecific
+        - path: /litellm
+          pathType: Prefix
+          backend:
+            service:
+              name: litellm
+              port:
+                number: 4000
   tls: []
   #  - secretName: chart-example-tls
   #    hosts:
