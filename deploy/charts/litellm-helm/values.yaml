@@ -93,6 +93,8 @@ masterkeySecretKey: master-key
 #  Examples: https://github.com/BerriAI/litellm/tree/main/litellm/proxy/example_config_yaml
 #  Reference: https://docs.litellm.ai/docs/proxy/configs
 proxy_config:
+  general_settings:
+    root_path: os.environ/SERVER_ROOT_PATH
   model_list:
     - model_name: gemini-2.5-pro-preview-03-25 # litellm에서 사용할 모델 별칭
       litellm_params:
@@ -220,6 +222,7 @@ migrationJob:
 # Additional environment variables to be added to the deployment as a map of key-value pairs
 envVars: {
     # USE_DDTRACE: "true"
+    SERVER_ROOT_PATH: "/litellm"
 }
 
 # Additional environment variables to be added to the deployment as a list of k8s env vars
