@@ -57,7 +57,7 @@ environmentConfigMaps: []
   # - litellm-env-configmap
 
 service:
-  type: LoadBalancer
+  type: ClusterIP
   port: 4000
   # If service type is `LoadBalancer` you can
   # optionally specify loadBalancerClass
