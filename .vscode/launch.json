@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "Python: LiteLLM Proxy Server (Uvicorn)",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
       "args": [
@@ -19,7 +19,7 @@
     },
     {
       "name": "Python: LiteLLM Proxy Server (litellm CLI)",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/.venv/bin/litellm",
       "args": [
