@@ -24,7 +24,7 @@ model_list:
       input_cost_per_token: 0.000015
       output_cost_per_token: 0.000015
 
-litellm_settings:
+# litellm_settings:
     # callbacks:
     #   - "langfuse"
 general_settings:

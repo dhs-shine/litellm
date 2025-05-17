@@ -9,16 +9,16 @@ services:
     #########################################
     ## Uncomment these lines to start proxy with a config.yaml file ##
     volumes:
-     - ./config.yaml:/app/config.yaml
-     - ./custom_jwt_auth.py:/app/custom_jwt_auth.py
+     - ./customs/config.yaml:/app/config.yaml
+     - ./customs/custom_jwt_auth.py:/app/custom_jwt_auth.py
     command:
      - "--config=/app/config.yaml"
     ##############################################
     ports:
       - "24000:4000" # Map the container port to the host, change the host port if necessary
     # environment:
-    #     DATABASE_URL: "postgresql://llmproxy:dbpassword9090@db:5432/litellm"
-    #     STORE_MODEL_IN_DB: "True" # allows adding models to proxy via UI
+    #     DATABASE_URL: ${DATABASE_URL:-postgresql://llmproxy:changeme@db:5432/litellm}
+    #     STORE_MODEL_IN_DB: ${STORE_MODEL_IN_DB:-"True"} # allows adding models to proxy via UI
     env_file:
       - .env # Load local .env file
     # depends_on:
@@ -29,15 +29,14 @@ services:
       timeout: 10s   # Health check command times out after 10 seconds
       retries: 3     # Retry up to 3 times if health check fails
       start_period: 40s  # Wait 40 seconds after container start before beginning health checks
-
  
   # db:
   #   image: postgres:16
   #   restart: always
   #   environment:
-  #     POSTGRES_DB: litellm
-  #     POSTGRES_USER: llmproxy
-  #     POSTGRES_PASSWORD: dbpassword9090
+  #     POSTGRES_DB: ${POSTGRES_DB:-litellm}
+  #     POSTGRES_USER: ${POSTGRES_USER:-llmproxy}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
   #   ports:
   #     - "15432:5432"
   #   volumes:
@@ -66,4 +65,3 @@ services:
 #     driver: local
 #   postgres_data:
 #     name: litellm_postgres_data  # Named volume for Postgres data persistence
-
