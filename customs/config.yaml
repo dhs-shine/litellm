@@ -25,7 +25,19 @@ model_list:
       output_cost_per_token: 0.000015
 
 litellm_settings:
-  callbacks:
-    - "langfuse"
+  s3_callback_params:
+    s3_bucket_name: langfuse
+    s3_region_name: auto
+    s3_aws_access_key_id: os.environ/MINIO_ID
+    s3_aws_secret_access_key: os.environ/MINIO_PASSWORD
+    s3_endpoint_url: http://localhost:29000
+    s3_path: /encrypted
+  success_callback:
+    - s3
+    - langfuse
+  failure_callback:
+    - s3
+    - langfuse
+  # redact_user_api_key_info: true
 general_settings:
   # custom_auth: custom_jwt_auth.user_api_key_auth
