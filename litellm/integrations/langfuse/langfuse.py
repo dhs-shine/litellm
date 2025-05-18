@@ -506,8 +506,15 @@ class LangFuseLogger:
             existing_trace_id = clean_metadata.pop("existing_trace_id", None)
             update_trace_keys = cast(list, clean_metadata.pop("update_trace_keys", []))
             debug = clean_metadata.pop("debug_langfuse", None)
-            mask_input = clean_metadata.pop("mask_input", False)
-            mask_output = clean_metadata.pop("mask_output", False)
+            # 환경변수 기반 redaction 설정을 메타데이터에 추가
+            # mask_input = clean_metadata.pop("mask_input", self.redact_log) # self.redact_log 대신 kwargs에서 가져옵니다.
+            # mask_output = clean_metadata.pop("mask_output", self.redact_log) # self.redact_log 대신 kwargs에서 가져옵니다.
+
+            # mask_input과 mask_output을 결정. self.redact_log가 True이면 강제 redact.
+            # LANGFUSE_REDACT_LOG 환경변수 값을 직접 읽어 redact 여부 결정
+            redact_log_env = str_to_bool(os.getenv("LANGFUSE_REDACT_LOG", "false"))
+            mask_input = True if redact_log_env else clean_metadata.pop("mask_input", False)
+            mask_output = True if redact_log_env else clean_metadata.pop("mask_output", False)
 
             clean_metadata = redact_user_api_key_info(metadata=clean_metadata)
 
