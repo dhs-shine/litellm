@@ -31,6 +31,7 @@ from litellm.proxy.auth.auth_utils import (
     get_key_model_tpm_limit,
 )
 from litellm.router_strategy.base_routing_strategy import BaseRoutingStrategy
+from litellm.exceptions import RateLimitError
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span as _Span
@@ -184,18 +185,14 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
 
     def raise_rate_limit_error(
         self, additional_details: Optional[str] = None
-    ) -> HTTPException:
+    ) -> Exception:
         """
-        Raise an HTTPException with a 429 status code and a retry-after header
+        Raise a RateLimitError with a 429-like message for fallback logic
         """
         error_message = "Max parallel request limit reached"
         if additional_details is not None:
             error_message = error_message + " " + additional_details
-        raise HTTPException(
-            status_code=429,
-            detail=f"Max parallel request limit reached {additional_details}",
-            headers={"retry-after": str(self.time_to_next_minute())},
-        )
+        raise RateLimitError(error_message, llm_provider="proxy", model="proxy")
 
     async def async_pre_call_hook(  # noqa: PLR0915
         self,
