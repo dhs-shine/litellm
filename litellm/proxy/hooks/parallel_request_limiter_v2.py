@@ -168,7 +168,8 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
             should_raise_error = should_raise_error or results[2] > tpm_limit
         if should_raise_error:
             raise self.raise_rate_limit_error(
-                additional_details=f"{CommonProxyErrors.max_parallel_request_limit_reached.value}. Hit limit for {rate_limit_type}. Current usage: max_parallel_requests: {results[0]}, current_rpm: {results[1]}, current_tpm: {results[2]}. Current limits: max_parallel_requests: {max_parallel_requests}, rpm_limit: {rpm_limit}, tpm_limit: {tpm_limit}."
+                additional_details=f"{CommonProxyErrors.max_parallel_request_limit_reached.value}. Hit limit for {rate_limit_type}. Current usage: max_parallel_requests: {results[0]}, current_rpm: {results[1]}, current_tpm: {results[2]}. Current limits: max_parallel_requests: {max_parallel_requests}, rpm_limit: {rpm_limit}, tpm_limit: {tpm_limit}.",
+                data=data
             )
 
     def time_to_next_minute(self) -> float:
@@ -184,7 +185,8 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
         return seconds_to_next_minute
 
     def raise_rate_limit_error(
-        self, additional_details: Optional[str] = None
+        self, additional_details: Optional[str] = None,
+        data: Optional[dict] = None
     ) -> Exception:
         """
         Raise a RateLimitError with a 429-like message for fallback logic
@@ -192,7 +194,12 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
         error_message = "Max parallel request limit reached"
         if additional_details is not None:
             error_message = error_message + " " + additional_details
-        raise RateLimitError(error_message, llm_provider="proxy", model="proxy")
+        model_name = None
+        if data is not None:
+            model_name = data.get("model", "proxy")
+        else:
+            model_name = "proxy"
+        raise RateLimitError(error_message, llm_provider="litellm_proxy", model=model_name)
 
     async def async_pre_call_hook(  # noqa: PLR0915
         self,
@@ -234,7 +241,8 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
             # if above -> raise error
             if current_global_requests >= global_max_parallel_requests:
                 return self.raise_rate_limit_error(
-                    additional_details=f"Hit Global Limit: Limit={global_max_parallel_requests}, current: {current_global_requests}"
+                    additional_details=f"Hit Global Limit: Limit={global_max_parallel_requests}, current: {current_global_requests}",
+                    data=data
                 )
             # if below -> increment
             else:
