@@ -17,7 +17,7 @@ except ImportError:
 # List of all available hooks that can be enabled
 PROXY_HOOKS = {
     "max_budget_limiter": _PROXY_MaxBudgetLimiter,
-    "parallel_request_limiter": _PROXY_MaxParallelRequestsHandler,
+    # "parallel_request_limiter": _PROXY_MaxParallelRequestsHandler,
     "cache_control_check": _PROXY_CacheControlCheck,
 }
 
