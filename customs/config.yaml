@@ -17,7 +17,7 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0.000015
       output_cost_per_token: 0.000015
-      rpm: 50 
+      rpm: 3
   - model_name: gemini-2.0-flash-exp
     litellm_params:
       model: gemini/gemini-2.0-flash-exp
