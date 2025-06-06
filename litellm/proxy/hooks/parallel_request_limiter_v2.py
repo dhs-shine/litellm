@@ -167,10 +167,11 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
         if tpm_limit is not None:
             should_raise_error = should_raise_error or results[2] > tpm_limit
         if should_raise_error:
-            raise self.raise_rate_limit_error(
+            self.raise_rate_limit_error(
                 additional_details=f"{CommonProxyErrors.max_parallel_request_limit_reached.value}. Hit limit for {rate_limit_type}. Current usage: max_parallel_requests: {results[0]}, current_rpm: {results[1]}, current_tpm: {results[2]}. Current limits: max_parallel_requests: {max_parallel_requests}, rpm_limit: {rpm_limit}, tpm_limit: {tpm_limit}.",
                 data=data
             )
+            return
 
     def time_to_next_minute(self) -> float:
         # Get the current time
@@ -187,24 +188,20 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
     def raise_rate_limit_error(
         self, additional_details: Optional[str] = None,
         data: Optional[dict] = None
-    ) -> Exception:
+    ) -> None:
         """
-        Raise a RateLimitError with a 429-like message for fallback logic
+        기존에는 HTTPException을 raise했으나, 이제는 data['metadata']에 에러 정보를 남기고 반환만 한다.
         """
         error_message = "Max parallel request limit reached"
         if additional_details is not None:
             error_message = error_message + " " + additional_details
-        raise HTTPException(
-            status_code=429,
-            detail=f"Max parallel request limit reached {additional_details}",
-            headers={"retry-after": str(self.time_to_next_minute())},
-        )
-        # model_name = None
-        # if data is not None:
-        #     model_name = data.get("model", "proxy")
-        # else:
-        #     model_name = "proxy"
-        # raise RateLimitError(error_message, llm_provider="litellm_proxy", model=model_name)
+        if data is not None:
+            metadata = data.setdefault("metadata", {})
+            metadata["rate_limit_error"] = {
+                "message": error_message,
+                "retry_after": self.time_to_next_minute(),
+            }
+        return None
 
     async def async_pre_call_hook(  # noqa: PLR0915
         self,
@@ -245,10 +242,11 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
                 current_global_requests = 1
             # if above -> raise error
             if current_global_requests >= global_max_parallel_requests:
-                return self.raise_rate_limit_error(
+                self.raise_rate_limit_error(
                     additional_details=f"Hit Global Limit: Limit={global_max_parallel_requests}, current: {current_global_requests}",
                     data=data
                 )
+                return
             # if below -> increment
             else:
                 await self.internal_usage_cache.async_increment_cache(

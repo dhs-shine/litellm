@@ -3361,6 +3361,18 @@ class Router:
             original_model_group: Optional[str] = kwargs.get("model")  # type: ignore
             fallback_failure_exception_str = ""
 
+            # rate_limit_error가 metadata에 있으면 RouterRateLimitError를 raise
+            metadata = kwargs.get("metadata", {})
+            if "rate_limit_error" in metadata:
+                from litellm.types.router import RouterRateLimitError
+                err = metadata["rate_limit_error"]
+                raise RouterRateLimitError(
+                    model=original_model_group or "unknown",
+                    cooldown_time=err.get("retry_after", 60),
+                    enable_pre_call_checks=getattr(self, "enable_pre_call_checks", False),
+                    cooldown_list=[],
+                )
+
             if disable_fallbacks is True or original_model_group is None:
                 raise e
 
