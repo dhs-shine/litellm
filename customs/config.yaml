@@ -17,6 +17,7 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0.000015
       output_cost_per_token: 0.000015
+      rpm: 3
   - model_name: gemini-2.0-flash-exp
     litellm_params:
       model: gemini/gemini-2.0-flash-exp
@@ -41,9 +42,13 @@ router_settings:
   redis_port: os.environ/REDIS_PORT
   redis_password: os.environ/REDIS_PASSWORD
   enable_pre_call_check: true
-  fallbacks: 
-    - gemini-2.5-pro-preview: gemini-2.5-flash-preview
-    - gemini-2.5-flash-preview: gemini-2.0-flash-exp
+  fallbacks: [{"gemini-2.5-pro-preview": ["gemini-2.5-flash-preview"]}, {"gemini-2.5-flash-preview": ["gemini-2.0-flash-exp"]}]
+  retry_policy: {
+    "RateLimitErrorRetries": 0
+  }
+  allowed_fails_policy: {
+    "RateLimitErrorAllowedFails": 0
+  }
 
 litellm_settings:
   cache: true
@@ -67,5 +72,4 @@ litellm_settings:
   failure_callback:
     - s3
     - langfuse
-  default_fallbacks:
-    - gemini-2.0-flash-exp
+  default_fallbacks: ["gemini-2.0-flash-exp"]
