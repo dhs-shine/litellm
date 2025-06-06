@@ -17,7 +17,7 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0.000015
       output_cost_per_token: 0.000015
-      rpm: 3
+      rpm: 10
   - model_name: gemini-2.0-flash-exp
     litellm_params:
       model: gemini/gemini-2.0-flash-exp
@@ -34,7 +34,7 @@ model_list:
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   store_models_in_db: false
-  # custom_auth: custom_jwt_auth.user_api_key_auth
+  custom_auth: custom_auth_handler.user_api_key_auth
 
 router_settings:
   routing_strategy: usage-based-routing-v2

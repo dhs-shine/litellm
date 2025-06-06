@@ -11,6 +11,7 @@ services:
     volumes:
      - ./customs/config.yaml:/app/config.yaml
      - ./customs/custom_jwt_auth.py:/app/custom_jwt_auth.py
+     - ./customs/custom_auth_handler.py:/app/custom_auth_handler.py
     command:
      - "--config=/app/config.yaml"
     ##############################################
