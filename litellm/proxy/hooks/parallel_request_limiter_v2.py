@@ -194,12 +194,17 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
         error_message = "Max parallel request limit reached"
         if additional_details is not None:
             error_message = error_message + " " + additional_details
-        model_name = None
-        if data is not None:
-            model_name = data.get("model", "proxy")
-        else:
-            model_name = "proxy"
-        raise RateLimitError(error_message, llm_provider="litellm_proxy", model=model_name)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Max parallel request limit reached {additional_details}",
+            headers={"retry-after": str(self.time_to_next_minute())},
+        )
+        # model_name = None
+        # if data is not None:
+        #     model_name = data.get("model", "proxy")
+        # else:
+        #     model_name = "proxy"
+        # raise RateLimitError(error_message, llm_provider="litellm_proxy", model=model_name)
 
     async def async_pre_call_hook(  # noqa: PLR0915
         self,
