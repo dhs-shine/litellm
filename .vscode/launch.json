@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: LiteLLM Proxy Server (Uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "litellm.proxy.proxy_server:app",
+        "--host",
+        "localhost",
+        "--port",
+        "4000",
+        "--reload"
+      ],
+      "jinja": true,
+      "justMyCode": true
+    },
+    {
+      "name": "Python: LiteLLM Proxy Server (litellm CLI)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/.venv/bin/litellm",
+      "args": [
+        "--config",
+        "./customs/config.yaml",
+        "--port",
+        "4000"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
