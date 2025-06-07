@@ -247,6 +247,9 @@ return_response_headers: bool = (
     False  # get response headers from LLM Api providers - example x-remaining-requests,
 )
 enable_json_schema_validation: bool = False
+enable_lazy_rate_limit_exception_for_parallel_request_limiter: bool = bool(
+    os.getenv("ENABLE_LAZY_RATE_LIMIT_FOR_PARALLEL_REQUEST_LIMITER", False)
+)
 ##################
 logging: bool = True
 enable_loadbalancing_on_batch_endpoints: Optional[bool] = None

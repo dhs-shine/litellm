@@ -1,0 +1,61 @@
+model_list:
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro-preview-06-05
+      api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0.00000125
+      output_cost_per_token: 0.000015
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash-preview-05-20
+      api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0.00000015
+      output_cost_per_token: 0.0000006
+      # rpm: 3
+  - model_name: gemini-2.0-flash
+    litellm_params:
+      model: gemini/gemini-2.0-flash-exp
+      api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000004
+  - model_name: perplexity-sonar
+    litellm_params:
+      model: openai/sonar
+      api_key: os.environ/PERPLEXITY_API_KEY
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000001
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: false
+  custom_auth: custom_auth_handler.user_api_key_auth
+
+router_settings:
+  routing_strategy: usage-based-routing-v2
+  redis_host: os.environ/REDIS_HOST
+  redis_port: os.environ/REDIS_PORT
+  redis_password: os.environ/REDIS_PASSWORD
+  enable_pre_call_checks: true
+  fallbacks: [{"gemini-2.5-pro": ["gemini-2.5-flash"]}, {"gemini-2.5-flash": ["gemini-2.0-flash"]}]
+  retry_policy: {
+    "RateLimitErrorRetries": 0
+  }
+  allowed_fails_policy: {
+    "RateLimitErrorAllowedFails": 0
+  }
+
+litellm_settings:
+  cache: true
+  cache_params:
+    supported_call_types: []
+    type: redis
+    host: os.environ/REDIS_HOST
+    port: os.environ/REDIS_PORT
+    password: os.environ/REDIS_PASSWORD
+    ttl: 60
+  success_callback:
+    - langfuse
+  failure_callback:
+    - langfuse
+  enable_lazy_rate_limit_exception_for_parallel_request_limiter: true
+  default_fallbacks: ["gemini-2.0-flash"]
