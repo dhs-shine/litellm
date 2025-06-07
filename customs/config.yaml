@@ -1,35 +1,29 @@
 model_list:
-  - model_name: gemini-2.5-pro-preview
+  - model_name: gemini-2.5-pro
     litellm_params:
       model: gemini/gemini-2.5-pro-preview-06-05
       api_key: os.environ/GEMINI_API_KEY
-      input_cost_per_token: 0.000015
+      input_cost_per_token: 0.00000125
       output_cost_per_token: 0.000015
-  - model_name: gemini-2.5-pro-exp
-    litellm_params:
-      model: gemini/gemini-2.5-pro-exp-03-25
-      api_key: os.environ/GEMINI_API_KEY 
-      input_cost_per_token: 0.000015
-      output_cost_per_token: 0.000015
-  - model_name: gemini-2.5-flash-preview
+  - model_name: gemini-2.5-flash
     litellm_params:
       model: gemini/gemini-2.5-flash-preview-05-20
       api_key: os.environ/GEMINI_API_KEY
-      input_cost_per_token: 0.000015
-      output_cost_per_token: 0.000015
-      rpm: 3
-  - model_name: gemini-2.0-flash-exp
+      input_cost_per_token: 0.00000015
+      output_cost_per_token: 0.0000006
+      # rpm: 3
+  - model_name: gemini-2.0-flash
     litellm_params:
       model: gemini/gemini-2.0-flash-exp
       api_key: os.environ/GEMINI_API_KEY 
-      input_cost_per_token: 0.000015
-      output_cost_per_token: 0.000015
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000004
   - model_name: perplexity-sonar
     litellm_params:
       model: openai/sonar
       api_key: os.environ/PERPLEXITY_API_KEY 
-      input_cost_per_token: 0.000015
-      output_cost_per_token: 0.000015
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000001
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
@@ -42,7 +36,7 @@ router_settings:
   redis_port: os.environ/REDIS_PORT
   redis_password: os.environ/REDIS_PASSWORD
   enable_pre_call_check: true
-  fallbacks: [{"gemini-2.5-pro-preview": ["gemini-2.5-flash-preview"]}, {"gemini-2.5-flash-preview": ["gemini-2.0-flash-exp"]}]
+  fallbacks: [{"gemini-2.5-pro": ["gemini-2.5-flash"]}, {"gemini-2.5-flash": ["gemini-2.0-flash"]}]
   retry_policy: {
     "RateLimitErrorRetries": 0
   }
@@ -63,4 +57,4 @@ litellm_settings:
     - langfuse
   failure_callback:
     - langfuse
-  default_fallbacks: ["gemini-2.0-flash-exp"]
+  default_fallbacks: ["gemini-2.0-flash"]
