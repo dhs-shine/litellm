@@ -3340,6 +3340,14 @@ class Router:
         mock_timeout = kwargs.pop("mock_timeout", None)
 
         try:
+            # Check for lazy rate limit exception from metadata
+            if kwargs.get("metadata", {}).get("lazy_rate_limit_exception_from_check_key_in_limits") is True:
+                raise litellm.RateLimitError(
+                    model=model_group,
+                    llm_provider="",
+                    message=f"Lazy RateLimitError triggered for model={model_group}.",
+                )
+
             self._handle_mock_testing_fallbacks(
                 kwargs=kwargs,
                 model_group=model_group,

@@ -242,14 +242,17 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
 
         if should_raise_error:
             ## DECREMENT CURRENT USAGE - so we don't keep failing subsequent requests
-            await self._increment_value_list_in_current_window(
-                increment_list=decrement_list,
-                ttl=60,
-            )
+            # await self._increment_value_list_in_current_window(
+            #     increment_list=decrement_list,
+            #     ttl=60,
+            # )
 
-            raise self.raise_rate_limit_error(
-                additional_details=f"{CommonProxyErrors.max_parallel_request_limit_reached.value}. Hit limit for {rate_limit_type}. Current usage: max_parallel_requests: {total_requests}, current_rpm: {total_rpm}, current_tpm: {total_tpm}. Current limits: max_parallel_requests: {max_parallel_requests}, rpm_limit: {rpm_limit}, tpm_limit: {tpm_limit}."
-            )
+            # raise self.raise_rate_limit_error(
+            #     additional_details=f"{CommonProxyErrors.max_parallel_request_limit_reached.value}. Hit limit for {rate_limit_type}. Current usage: max_parallel_requests: {total_requests}, current_rpm: {total_rpm}, current_tpm: {total_tpm}. Current limits: max_parallel_requests: {max_parallel_requests}, rpm_limit: {rpm_limit}, tpm_limit: {tpm_limit}."
+            # )
+            data.setdefault("metadata", {})
+            data["metadata"]["lazy_rate_limit_exception_from_check_key_in_limits"] = True
+            return
 
     def time_to_next_minute(self) -> float:
         # Get the current time
