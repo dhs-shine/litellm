@@ -241,7 +241,12 @@ class _PROXY_MaxParallelRequestsHandler_v2(BaseRoutingStrategy, CustomLogger):
             should_raise_error = should_raise_error or total_tpm > tpm_limit
 
         if should_raise_error:
-            ## DECREMENT CURRENT USAGE - so we don't keep failing subsequent requests
+            if litellm.enable_lazy_rate_limit_exception_for_parallel_request_limiter:
+                data.setdefault("metadata", {})
+                data["metadata"]["lazy_rate_limit_exception_for_parallel_request_limiter"] = True
+                return
+
+            # DECREMENT CURRENT USAGE - so we don't keep failing subsequent requests
             await self._increment_value_list_in_current_window(
                 increment_list=decrement_list,
                 ttl=60,

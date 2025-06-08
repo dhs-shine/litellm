@@ -57,4 +57,5 @@ litellm_settings:
     - langfuse
   failure_callback:
     - langfuse
+  enable_lazy_rate_limit_exception_for_parallel_request_limiter: true
   default_fallbacks: ["gemini-2.0-flash"]
