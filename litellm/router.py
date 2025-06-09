@@ -3341,12 +3341,13 @@ class Router:
 
         try:
             if litellm.enable_lazy_rate_limit_exception_for_parallel_request_limiter:
-                if kwargs.get("metadata", {}).get("lazy_rate_limit_exception_for_parallel_request_limiter") is True:
+                lazy_exception_msg = kwargs.get("metadata", {}).get("lazy_rate_limit_exception_for_parallel_request_limiter")
+                if lazy_exception_msg:
                     kwargs["metadata"].pop("lazy_rate_limit_exception_for_parallel_request_limiter")
                     raise litellm.RateLimitError(
                         model=model_group,
                         llm_provider="",
-                        message=f"Lazy RateLimitError triggered for model={model_group}.",
+                        message=lazy_exception_msg,
                     )
 
             self._handle_mock_testing_fallbacks(
