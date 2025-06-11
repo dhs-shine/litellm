@@ -429,6 +429,15 @@ def get_key_model_rpm_limit(
 
     return None
 
+# helpers used by parallel request limiter to handle model rpm/tpm limits for a given api key
+def get_key_model_rpd_limit(
+    user_api_key_dict: UserAPIKeyAuth,
+) -> Optional[Dict[str, int]]:
+    if user_api_key_dict.metadata:
+        if "model_rpd_limit" in user_api_key_dict.metadata:
+            return user_api_key_dict.metadata["model_rpd_limit"]
+    return None
+
 
 def get_key_model_tpm_limit(
     user_api_key_dict: UserAPIKeyAuth,

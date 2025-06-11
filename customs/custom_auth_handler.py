@@ -8,7 +8,7 @@ async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
 
         if api_key == master_key:
             # return UserAPIKeyAuth(api_key=api_key, user_id="admin")
-            return UserAPIKeyAuth(api_key=api_key, user_id="admin", metadata={"model_rpm_limit": {"gemini-2.5-flash": 3}})
+            return UserAPIKeyAuth(api_key=api_key, user_id="admin", metadata={"model_rpm_limit": {"gemini-2.5-flash": 3}, "model_rpd_limit": {"gemini-2.5-flash": 5}})
         else:
             raise HTTPException(status_code=401, detail={"error": "Invalid API Key"})
     except Exception as e:
