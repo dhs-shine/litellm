@@ -6,7 +6,7 @@ from .cache_control_check import _PROXY_CacheControlCheck
 from .max_budget_limiter import _PROXY_MaxBudgetLimiter
 from .parallel_request_limiter import _PROXY_MaxParallelRequestsHandler
 from .parallel_request_limiter_v2 import _PROXY_MaxParallelRequestsHandler_v2
-from .parallel_request_limiter_v2_rpd import _PROXY_MaxParallelRequestsHandler_v2_RateLimitPerDay
+from .parallel_request_limiter_v2_enhanced_rate_limit import _PROXY_MaxParallelRequestsHandler_v2_EnhancedRateLimit
 
 ### CHECK IF ENTERPRISE HOOKS ARE AVAILABLE ###
 
@@ -27,7 +27,7 @@ if os.getenv("EXPERIMENTAL_MULTI_INSTANCE_RATE_LIMITING", "false").lower() == "t
     PROXY_HOOKS["parallel_request_limiter"] = _PROXY_MaxParallelRequestsHandler_v2
 
 if os.getenv("EXPERIMENTAL_SUPPORT_RATE_LIMIT_PER_DAY", "false").lower() == "true":
-    PROXY_HOOKS["parallel_request_limiter"] = _PROXY_MaxParallelRequestsHandler_v2_RateLimitPerDay
+    PROXY_HOOKS["parallel_request_limiter"] = _PROXY_MaxParallelRequestsHandler_v2_EnhancedRateLimit
 
 
 ### update PROXY_HOOKS with ENTERPRISE_PROXY_HOOKS ###

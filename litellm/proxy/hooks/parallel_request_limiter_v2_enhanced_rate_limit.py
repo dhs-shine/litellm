@@ -49,7 +49,7 @@ RateLimitGroupsPerDay = Literal["rpd"]
 RateLimitTypes = Literal["key", "model_per_key", "user", "customer", "team"]
 
 
-class _PROXY_MaxParallelRequestsHandler_v2_RateLimitPerDay(BaseRoutingStrategy, CustomLogger):
+class _PROXY_MaxParallelRequestsHandler_v2_EnhancedRateLimit(BaseRoutingStrategy, CustomLogger):
     # Class variables or attributes
     def __init__(self, internal_usage_cache: InternalUsageCache):
         self.internal_usage_cache = internal_usage_cache
