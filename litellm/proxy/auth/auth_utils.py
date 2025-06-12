@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Dict, Union
 
 from fastapi import HTTPException, Request, status
 
@@ -414,9 +414,10 @@ def bytes_to_mb(bytes_value: int):
 
 
 # helpers used by parallel request limiter to handle model rpm/tpm limits for a given api key
-def get_key_model_rpm_limit(
-    user_api_key_dict: UserAPIKeyAuth,
-) -> Optional[Dict[str, int]]:
+def get_key_model_rpm_limit(user_api_key_dict: UserAPIKeyAuth) -> Optional[Dict[str, int]]:
+    """
+    Get the RPM limit for each model for this key.
+    """
     if user_api_key_dict.metadata:
         if "model_rpm_limit" in user_api_key_dict.metadata:
             return user_api_key_dict.metadata["model_rpm_limit"]
@@ -426,7 +427,38 @@ def get_key_model_rpm_limit(
             if "rpm_limit" in budget and budget["rpm_limit"] is not None:
                 model_rpm_limit[model] = budget["rpm_limit"]
         return model_rpm_limit
+    return None
 
+
+def get_key_model_rph_limit(user_api_key_dict: UserAPIKeyAuth) -> Optional[Dict[str, int]]:
+    """
+    Get the RPH limit for each model for this key.
+    """
+    if user_api_key_dict.metadata:
+        if "model_rph_limit" in user_api_key_dict.metadata:
+            return user_api_key_dict.metadata["model_rph_limit"]
+    elif user_api_key_dict.model_max_budget:
+        model_rph_limit: Dict[str, Any] = {}
+        for model, budget in user_api_key_dict.model_max_budget.items():
+            if "rph_limit" in budget and budget["rph_limit"] is not None:
+                model_rph_limit[model] = budget["rph_limit"]
+        return model_rph_limit
+    return None
+
+
+def get_key_model_rpd_limit(user_api_key_dict: UserAPIKeyAuth) -> Optional[Dict[str, int]]:
+    """
+    Get the RPD limit for each model for this key.
+    """
+    if user_api_key_dict.metadata:
+        if "model_rpd_limit" in user_api_key_dict.metadata:
+            return user_api_key_dict.metadata["model_rpd_limit"]
+    elif user_api_key_dict.model_max_budget:
+        model_rpd_limit: Dict[str, Any] = {}
+        for model, budget in user_api_key_dict.model_max_budget.items():
+            if "rpd_limit" in budget and budget["rpd_limit"] is not None:
+                model_rpd_limit[model] = budget["rpd_limit"]
+        return model_rpd_limit
     return None
 
 

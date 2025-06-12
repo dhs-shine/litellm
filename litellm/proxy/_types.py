@@ -1715,6 +1715,12 @@ class UserAPIKeyAuth(
     tpm_limit_per_model: Optional[Dict[str, int]] = None
     user_tpm_limit: Optional[int] = None
     user_rpm_limit: Optional[int] = None
+    user_rph_limit: Optional[int] = None  # Requests per hour limit
+    user_rpd_limit: Optional[int] = None  # Requests per day limit
+    team_rph_limit: Optional[int] = None  # Team requests per hour limit
+    team_rpd_limit: Optional[int] = None  # Team requests per day limit
+    end_user_rph_limit: Optional[int] = None  # End user requests per hour limit
+    end_user_rpd_limit: Optional[int] = None  # End user requests per day limit
     user_email: Optional[str] = None
     request_route: Optional[str] = None
 
