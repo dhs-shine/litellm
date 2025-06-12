@@ -26,7 +26,7 @@ PROXY_HOOKS = {
 if os.getenv("EXPERIMENTAL_MULTI_INSTANCE_RATE_LIMITING", "false").lower() == "true":
     PROXY_HOOKS["parallel_request_limiter"] = _PROXY_MaxParallelRequestsHandler_v2
 
-if os.getenv("EXPERIMENTAL_SUPPORT_RATE_LIMIT_PER_DAY", "false").lower() == "true":
+if os.getenv("EXPERIMENTAL_SUPPORT_ENHANCED_RATE_LIMIT", "false").lower() == "true":
     PROXY_HOOKS["parallel_request_limiter"] = _PROXY_MaxParallelRequestsHandler_v2_EnhancedRateLimit
 
 

@@ -691,6 +691,7 @@ class GenerateRequestBase(LiteLLMPydanticObjectBase):
     model_config = ConfigDict(protected_namespaces=())
     model_rpm_limit: Optional[dict] = None
     model_tpm_limit: Optional[dict] = None
+    model_rph_limit: Optional[dict] = None
     model_rpd_limit: Optional[dict] = None
     guardrails: Optional[List[str]] = None
     blocked: Optional[bool] = None
@@ -1700,6 +1701,7 @@ class UserAPIKeyAuth(
     parent_otel_span: Optional[Span] = None
     rpm_limit_per_model: Optional[Dict[str, int]] = None
     tpm_limit_per_model: Optional[Dict[str, int]] = None
+    rph_limit_per_model: Optional[Dict[str, int]] = None
     rpd_limit_per_model: Optional[Dict[str, int]] = None
     user_tpm_limit: Optional[int] = None
     user_rpm_limit: Optional[int] = None
@@ -2694,6 +2696,7 @@ class UserManagementEndpointParamDocStringEnums(str, enum.Enum):
     soft_budget_doc_str = """Optional[float] - Get alerts when user crosses given budget, doesn't block requests."""
     model_max_budget_doc_str = """Optional[dict] - Model-specific max budget for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-budgets-to-keys)"""
     model_rpm_limit_doc_str = """Optional[float] - Model-specific rpm limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
+    model_rph_limit_doc_str = """Optional[float] - Model-specific rph limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
     model_rpd_limit_doc_str = """Optional[float] - Model-specific rpd limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
     model_tpm_limit_doc_str = """Optional[float] - Model-specific tpm limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
     spend_doc_str = """Optional[float] - Amount spent by user. Default is 0. Will be updated by proxy whenever user is used."""
