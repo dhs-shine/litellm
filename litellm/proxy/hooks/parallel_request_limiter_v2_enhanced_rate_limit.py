@@ -628,6 +628,8 @@ class _PROXY_MaxParallelRequestsHandler_v2_EnhancedRateLimit(BaseRoutingStrategy
             elif requested_model in _rpd_limit_for_key_model:
                 should_check_rate_limit = True
 
+            # TODO: rpm/rph/rpd check method를 각각 task로 등록하면 안되고, await를 이용해서 m/h/d 순으로 체크하는 새 method를 추가 후 하나의 task로 등록해야 한다.
+            # 그렇게 해야 앞의 조건에서 걸리는 경우, 뒤의 조건을 업데이트 하지 않는다. (rpm이 걸린 경우 rpd/rph는 검사할 이유가 없으며, increment도 하지 않아야 한다.)
             if should_check_rate_limit:
                 model_specific_tpm_limit: Optional[int] = None
                 model_specific_rpm_limit: Optional[int] = None
