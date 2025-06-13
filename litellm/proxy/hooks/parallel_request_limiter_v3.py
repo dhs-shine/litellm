@@ -508,9 +508,14 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             for i, status in enumerate(response["statuses"]):
                 if status["code"] == "OVER_LIMIT":
                     descriptor = descriptors[i]
+                    detail=f"Rate limit exceeded for {descriptor['key']}: {descriptor['value']}. Remaining: {status['limit_remaining']}",
+                    if litellm.enable_lazy_rate_limit_exception_for_parallel_request_limiter:
+                        data.setdefault("metadata", {})
+                        data["metadata"]["lazy_rate_limit_exception_for_parallel_request_limiter"] = detail
+                        return
                     raise HTTPException(
                         status_code=429,
-                        detail=f"Rate limit exceeded for {descriptor['key']}: {descriptor['value']}. Remaining: {status['limit_remaining']}",
+                        detail=detail,
                         headers={
                             "retry-after": str(self.window_size)
                         },  # Retry after 1 minute
