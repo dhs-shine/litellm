@@ -82,6 +82,13 @@ end
 return results
 """
 
+# Rate limit window sizes in seconds
+WINDOW_SIZE_RPM = 60  # 1 minute
+WINDOW_SIZE_RPH = 3600  # 1 hour
+WINDOW_SIZE_RPD = 86400  # 1 day
+WINDOW_SIZE_RPW = 604800  # 1 week
+WINDOW_SIZE_RPMO = 2592000  # 1 month (30 days)
+
 
 class RateLimitDescriptorRateLimitObject(TypedDict, total=False):
     requests_per_unit: Optional[int]
@@ -248,7 +255,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                 counter_key.endswith(":requests")
                 and requests_limit is not None
                 and counter_value is not None
-                and int(counter_value) + 1 > requests_limit
+                and int(counter_value) > requests_limit
             ):
                 overall_code = "OVER_LIMIT"
                 item_code = "OVER_LIMIT"
@@ -256,7 +263,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                 counter_key.endswith(":max_parallel_requests")
                 and max_parallel_requests_limit is not None
                 and counter_value is not None
-                and int(counter_value) + 1 > max_parallel_requests_limit
+                and int(counter_value) > max_parallel_requests_limit
             ):
                 overall_code = "OVER_LIMIT"
                 item_code = "OVER_LIMIT"
@@ -264,7 +271,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                 counter_key.endswith(":tokens")
                 and tokens_limit is not None
                 and counter_value is not None
-                and int(counter_value) + 1 > tokens_limit
+                and int(counter_value) > tokens_limit
             ):
                 overall_code = "OVER_LIMIT"
                 item_code = "OVER_LIMIT"
@@ -302,9 +309,109 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         now = datetime.now().timestamp()
         now_int = int(now)  # Convert to integer for Redis Lua script
 
-        # Collect all keys and their metadata upfront
+        # Group descriptors by window size
+        rpm_descriptors = []
+        rph_descriptors = []
+        rpd_descriptors = []
+        rpw_descriptors = []
+        rpmo_descriptors = []
+
+        for descriptor in descriptors:
+            rate_limit = descriptor.get("rate_limit", {}) or {}
+            window_size = rate_limit.get("window_size", WINDOW_SIZE_RPM)  # Default to 1 minute
+
+            if window_size == WINDOW_SIZE_RPM:  # 1 minute window
+                rpm_descriptors.append(descriptor)
+            elif window_size == WINDOW_SIZE_RPH:  # 1 hour window
+                rph_descriptors.append(descriptor)
+            elif window_size == WINDOW_SIZE_RPD:  # 24 hour window
+                rpd_descriptors.append(descriptor)
+            elif window_size == WINDOW_SIZE_RPW:
+                rpw_descriptors.append(descriptor)
+            elif window_size == WINDOW_SIZE_RPMO:
+                rpmo_descriptors.append(descriptor)
+
+        # Process descriptors in order: rpm -> rph -> rpd
+        all_statuses = []
+        overall_code = "OK"
+
+        # Process RPM limits first
+        if rpm_descriptors:
+            rpm_response = await self._process_rate_limits(
+                descriptors=rpm_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPM,  # 1 minute
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rpm_response["statuses"])
+            if rpm_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+                return RateLimitResponse(overall_code=overall_code, statuses=all_statuses)
+
+        # Process RPH limits if RPM passed
+        if rph_descriptors:
+            rph_response = await self._process_rate_limits(
+                descriptors=rph_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPH,  # 1 hour
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rph_response["statuses"])
+            if rph_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+                return RateLimitResponse(overall_code=overall_code, statuses=all_statuses)
+
+        # Process RPD limits if RPM and RPH passed
+        if rpd_descriptors:
+            rpd_response = await self._process_rate_limits(
+                descriptors=rpd_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPD,  # 24 hours
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rpd_response["statuses"])
+            if rpd_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+                # Process RPD limits if RPM and RPH passed
+
+        if rpw_descriptors:
+            rpw_response = await self._process_rate_limits(
+                descriptors=rpw_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPW,
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rpw_response["statuses"])
+            if rpw_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+
+        if rpmo_descriptors:
+            rpmo_response = await self._process_rate_limits(
+                descriptors=rpw_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPMO,
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rpmo_response["statuses"])
+            if rpmo_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+
+        return RateLimitResponse(overall_code=overall_code, statuses=all_statuses)
+
+
+    async def _process_rate_limits(
+        self,
+        descriptors: List[RateLimitDescriptor],
+        now_int: int,
+        window_size: int,
+        parent_otel_span: Optional[Span] = None,
+    ) -> RateLimitResponse:
+        """
+        Process rate limits for a specific window size.
+        """
         keys_to_fetch: List[str] = []
-        key_metadata = {}  # Store metadata for each key
+        key_metadata = {}
+
         for descriptor in descriptors:
             key = descriptor["key"]
             value = descriptor["value"]
@@ -357,7 +464,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         if self.batch_rate_limiter_script is not None:
             cache_values = await self.batch_rate_limiter_script(
                 keys=keys_to_fetch,
-                args=[now_int, self.window_size],  # Use integer timestamp
+                args=[now_int, window_size],  # Use integer timestamp
             )
             # update in-memory cache with new values
             for i in range(0, len(cache_values), 2):
@@ -368,14 +475,14 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                 await self.internal_usage_cache.async_set_cache(
                     key=counter_key,
                     value=counter_value,
-                    ttl=self.window_size,
+                    ttl=window_size,
                     litellm_parent_otel_span=parent_otel_span,
                     local_only=True,
                 )
                 await self.internal_usage_cache.async_set_cache(
                     key=window_key,
                     value=window_value,
-                    ttl=self.window_size,
+                    ttl=window_size,
                     litellm_parent_otel_span=parent_otel_span,
                     local_only=True,
                 )
@@ -399,7 +506,11 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         """
         from litellm.proxy.auth.auth_utils import (
             get_key_model_rpm_limit,
-            get_key_model_tpm_limit,
+            get_key_model_rph_limit,
+            get_key_model_rpd_limit,
+            get_key_model_rpw_limit,
+            get_key_model_rpmo_limit,
+            # get_key_model_tpm_limit,
         )
 
         verbose_proxy_logger.debug("Inside Rate Limit Pre-Call Hook")
@@ -408,94 +519,169 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         descriptors = []
 
         # API Key rate limits
-        if user_api_key_dict.api_key:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="api_key",
-                    value=user_api_key_dict.api_key,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.tpm_limit,
-                        "max_parallel_requests": user_api_key_dict.max_parallel_requests,
-                        "window_size": self.window_size,  # 1 minute window
-                    },
-                )
-            )
+        # if user_api_key_dict.api_key:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="api_key",
+        #             value=user_api_key_dict.api_key,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.tpm_limit,
+        #                 "max_parallel_requests": user_api_key_dict.max_parallel_requests,
+        #                 "window_size": self.window_size,  # 1 minute window
+        #             },
+        #         )
+        #     )
 
         # User rate limits
-        if user_api_key_dict.user_id:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="user",
-                    value=user_api_key_dict.user_id,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.user_rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.user_tpm_limit,
-                        "window_size": self.window_size,
-                    },
-                )
-            )
+        # if user_api_key_dict.user_id:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="user",
+        #             value=user_api_key_dict.user_id,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.user_rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.user_tpm_limit,
+        #                 "window_size": self.window_size,
+        #             },
+        #         )
+        #     )
 
         # Team rate limits
-        if user_api_key_dict.team_id:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="team",
-                    value=user_api_key_dict.team_id,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.team_rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.team_tpm_limit,
-                        "window_size": self.window_size,
-                    },
-                )
-            )
+        # if user_api_key_dict.team_id:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="team",
+        #             value=user_api_key_dict.team_id,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.team_rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.team_tpm_limit,
+        #                 "window_size": self.window_size,
+        #             },
+        #         )
+        #     )
 
         # End user rate limits
-        if user_api_key_dict.end_user_id:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="end_user",
-                    value=user_api_key_dict.end_user_id,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.end_user_rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.end_user_tpm_limit,
-                        "window_size": self.window_size,
-                    },
-                )
-            )
+        # if user_api_key_dict.end_user_id:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="end_user",
+        #             value=user_api_key_dict.end_user_id,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.end_user_rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.end_user_tpm_limit,
+        #                 "window_size": self.window_size,
+        #             },
+        #         )
+        #     )
 
         # Model rate limits
         requested_model = data.get("model", None)
         if requested_model and (
-            get_key_model_tpm_limit(user_api_key_dict) is not None
-            or get_key_model_rpm_limit(user_api_key_dict) is not None
+            # get_key_model_tpm_limit(user_api_key_dict) is not None
+            get_key_model_rpm_limit(user_api_key_dict) is not None
+            or get_key_model_rph_limit(user_api_key_dict) is not None
+            or get_key_model_rpd_limit(user_api_key_dict) is not None
+            or get_key_model_rpw_limit(user_api_key_dict) is not None
+            or get_key_model_rpmo_limit(user_api_key_dict) is not None
         ):
-            _tpm_limit_for_key_model = get_key_model_tpm_limit(user_api_key_dict) or {}
+            # _tpm_limit_for_key_model = get_key_model_tpm_limit(user_api_key_dict) or {}
             _rpm_limit_for_key_model = get_key_model_rpm_limit(user_api_key_dict) or {}
+            _rph_limit_for_key_model = get_key_model_rph_limit(user_api_key_dict) or {}
+            _rpd_limit_for_key_model = get_key_model_rpd_limit(user_api_key_dict) or {}
+            _rpw_limit_for_key_model = get_key_model_rpw_limit(user_api_key_dict) or {}
+            _rpmo_limit_for_key_model = get_key_model_rpmo_limit(user_api_key_dict) or {}
             should_check_rate_limit = False
-            if requested_model in _tpm_limit_for_key_model:
+            # if requested_model in _tpm_limit_for_key_model:
+            #     should_check_rate_limit = True
+            if requested_model in _rpm_limit_for_key_model:
                 should_check_rate_limit = True
-            elif requested_model in _rpm_limit_for_key_model:
+            if requested_model in _rph_limit_for_key_model:
+                should_check_rate_limit = True
+            if requested_model in _rpd_limit_for_key_model:
+                should_check_rate_limit = True
+            if requested_model in _rpw_limit_for_key_model:
+                should_check_rate_limit = True
+            if requested_model in _rpmo_limit_for_key_model:
                 should_check_rate_limit = True
 
             if should_check_rate_limit:
-                model_specific_tpm_limit: Optional[int] = None
+                # model_specific_tpm_limit: Optional[int] = None
                 model_specific_rpm_limit: Optional[int] = None
-                if requested_model in _tpm_limit_for_key_model:
-                    model_specific_tpm_limit = _tpm_limit_for_key_model[requested_model]
+                model_specific_rph_limit: Optional[int] = None
+                model_specific_rph_limit: Optional[int] = None
+                model_specific_rpd_limit: Optional[int] = None
+                model_specific_rpw_limit: Optional[int] = None
+                model_specific_rpmo_limit: Optional[int] = None
+                # if requested_model in _tpm_limit_for_key_model:
+                #     model_specific_tpm_limit = _tpm_limit_for_key_model[requested_model]
                 if requested_model in _rpm_limit_for_key_model:
                     model_specific_rpm_limit = _rpm_limit_for_key_model[requested_model]
-                descriptors.append(
-                    RateLimitDescriptor(
-                        key="model_per_key",
-                        value=f"{user_api_key_dict.api_key}:{requested_model}",
-                        rate_limit={
-                            "requests_per_unit": model_specific_rpm_limit,
-                            "tokens_per_unit": model_specific_tpm_limit,
-                            "window_size": self.window_size,
-                        },
+                if requested_model in _rph_limit_for_key_model:
+                    model_specific_rph_limit = _rph_limit_for_key_model[requested_model]
+                if requested_model in _rpd_limit_for_key_model:
+                    model_specific_rpd_limit = _rpd_limit_for_key_model[requested_model]
+                if requested_model in _rpw_limit_for_key_model:
+                    model_specific_rpw_limit = _rpw_limit_for_key_model[requested_model]
+                if requested_model in _rpmo_limit_for_key_model:
+                    model_specific_rpmo_limit = _rpmo_limit_for_key_model[requested_model]
+                # if model_specific_rpm_limit is not None or model_specific_tpm_limit is not None:
+                if model_specific_rpm_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpm",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rpm_limit,
+                                # "tokens_per_unit": model_specific_tpm_limit,
+                                "window_size": WINDOW_SIZE_RPM,  # 1 minute window
+                            },
+                        )
                     )
-                )
+                if model_specific_rph_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rph",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rph_limit,
+                                "window_size": WINDOW_SIZE_RPH,  # 1 hour window
+                            },
+                        )
+                    )
+                if model_specific_rpd_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpd",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rpd_limit,
+                                "window_size": WINDOW_SIZE_RPD,  # 24 hour window
+                            },
+                        )
+                    )
+                if model_specific_rpw_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpw",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rpw_limit,
+                                "window_size": WINDOW_SIZE_RPW,
+                            },
+                        )
+                    )
+                if model_specific_rpmo_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpmo",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rpmo_limit,
+                                "window_size": WINDOW_SIZE_RPW,
+                            },
+                        )
+                    )
 
         # Check rate limits
         response = await self.should_rate_limit(
@@ -508,41 +694,48 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             for i, status in enumerate(response["statuses"]):
                 if status["code"] == "OVER_LIMIT":
                     descriptor = descriptors[i]
+                    remaining = int(status["limit_remaining"]) if int(status["limit_remaining"]) >= 0 else 0
+                    detail=f"Rate limit exceeded for {descriptor['key']}: {descriptor['value']}. Limit: {status['current_limit']}, Remaining: {remaining}",
+                    if litellm.enable_lazy_rate_limit_exception_for_parallel_request_limiter:
+                        data.setdefault("metadata", {})
+                        data["metadata"]["lazy_rate_limit_exception_for_parallel_request_limiter"] = detail
+                        return
+                    headers = {}
+                    if int(descriptor["rate_limit"]["window_size"]) == WINDOW_SIZE_RPM:
+                        headers["retry-after"] = str(WINDOW_SIZE_RPM)
                     raise HTTPException(
                         status_code=429,
-                        detail=f"Rate limit exceeded for {descriptor['key']}: {descriptor['value']}. Remaining: {status['limit_remaining']}",
-                        headers={
-                            "retry-after": str(self.window_size)
-                        },  # Retry after 1 minute
+                        detail=detail,
+                        headers=headers,
                     )
 
-    def _create_pipeline_operations(
-        self,
-        key: str,
-        value: str,
-        rate_limit_type: Literal["requests", "tokens", "max_parallel_requests"],
-        total_tokens: int,
-    ) -> List["RedisPipelineIncrementOperation"]:
-        """
-        Create pipeline operations for TPM increments
-        """
-        from litellm.types.caching import RedisPipelineIncrementOperation
+    # def _create_pipeline_operations(
+    #     self,
+    #     key: str,
+    #     value: str,
+    #     rate_limit_type: Literal["requests", "tokens", "max_parallel_requests"],
+    #     total_tokens: int,
+    # ) -> List["RedisPipelineIncrementOperation"]:
+    #     """
+    #     Create pipeline operations for TPM increments
+    #     """
+    #     from litellm.types.caching import RedisPipelineIncrementOperation
 
-        pipeline_operations: List[RedisPipelineIncrementOperation] = []
-        counter_key = self.create_rate_limit_keys(
-            key=key,
-            value=value,
-            rate_limit_type="tokens",
-        )
-        pipeline_operations.append(
-            RedisPipelineIncrementOperation(
-                key=counter_key,
-                increment_value=total_tokens,
-                ttl=self.window_size,
-            )
-        )
+    #     pipeline_operations: List[RedisPipelineIncrementOperation] = []
+    #     counter_key = self.create_rate_limit_keys(
+    #         key=key,
+    #         value=value,
+    #         rate_limit_type="tokens",
+    #     )
+    #     pipeline_operations.append(
+    #         RedisPipelineIncrementOperation(
+    #             key=counter_key,
+    #             increment_value=total_tokens,
+    #             ttl=self.window_size,
+    #         )
+    #     )
 
-        return pipeline_operations
+    #     return pipeline_operations
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         """
@@ -565,15 +758,15 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
 
             # Get metadata from kwargs
             user_api_key = kwargs["litellm_params"]["metadata"].get("user_api_key")
-            user_api_key_user_id = kwargs["litellm_params"]["metadata"].get(
-                "user_api_key_user_id"
-            )
-            user_api_key_team_id = kwargs["litellm_params"]["metadata"].get(
-                "user_api_key_team_id"
-            )
-            user_api_key_end_user_id = kwargs.get("user") or kwargs["litellm_params"][
-                "metadata"
-            ].get("user_api_key_end_user_id")
+            # user_api_key_user_id = kwargs["litellm_params"]["metadata"].get(
+            #     "user_api_key_user_id"
+            # )
+            # user_api_key_team_id = kwargs["litellm_params"]["metadata"].get(
+            #     "user_api_key_team_id"
+            # )
+            # user_api_key_end_user_id = kwargs.get("user") or kwargs["litellm_params"][
+            #     "metadata"
+            # ].get("user_api_key_end_user_id")
             model_group = get_model_group_from_litellm_kwargs(kwargs)
 
             # Get total tokens from response
@@ -587,73 +780,73 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             pipeline_operations: List[RedisPipelineIncrementOperation] = []
 
             # API Key TPM
-            if user_api_key:
-                # MAX PARALLEL REQUESTS - only support for API Key, just decrement the counter
-                counter_key = self.create_rate_limit_keys(
-                    key="api_key",
-                    value=user_api_key,
-                    rate_limit_type="max_parallel_requests",
-                )
-                pipeline_operations.append(
-                    RedisPipelineIncrementOperation(
-                        key=counter_key,
-                        increment_value=-1,
-                        ttl=self.window_size,
-                    )
-                )
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="api_key",
-                        value=user_api_key,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key:
+            #     # MAX PARALLEL REQUESTS - only support for API Key, just decrement the counter
+            #     counter_key = self.create_rate_limit_keys(
+            #         key="api_key",
+            #         value=user_api_key,
+            #         rate_limit_type="max_parallel_requests",
+            #     )
+            #     pipeline_operations.append(
+            #         RedisPipelineIncrementOperation(
+            #             key=counter_key,
+            #             increment_value=-1,
+            #             ttl=self.window_size,
+            #         )
+            #     )
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="api_key",
+            #             value=user_api_key,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # User TPM
-            if user_api_key_user_id:
-                # TPM
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="user",
-                        value=user_api_key_user_id,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key_user_id:
+            #     # TPM
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="user",
+            #             value=user_api_key_user_id,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # Team TPM
-            if user_api_key_team_id:
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="team",
-                        value=user_api_key_team_id,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key_team_id:
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="team",
+            #             value=user_api_key_team_id,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # End User TPM
-            if user_api_key_end_user_id:
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="end_user",
-                        value=user_api_key_end_user_id,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key_end_user_id:
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="end_user",
+            #             value=user_api_key_end_user_id,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # Model-specific TPM
-            if model_group and user_api_key:
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="model_per_key",
-                        value=f"{user_api_key}:{model_group}",
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if model_group and user_api_key:
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="model_per_key",
+            #             value=f"{user_api_key}:{model_group}",
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # Execute all increments in a single pipeline
             if pipeline_operations:
@@ -679,63 +872,64 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         """
         Post-call hook to update rate limit headers in the response.
         """
-        try:
-            descriptors = []
+        pass
+        # try:
+        #     descriptors = []
 
-            # API Key
-            if user_api_key_dict.api_key:
-                descriptors.append(
-                    RateLimitDescriptor(
-                        key="api_key",
-                        value=user_api_key_dict.api_key,
-                        rate_limit={
-                            "requests_per_unit": user_api_key_dict.rpm_limit
-                            or sys.maxsize,
-                            "window_size": self.window_size,
-                        },
-                    )
-                )
+        #     # API Key
+        #     if user_api_key_dict.api_key:
+        #         descriptors.append(
+        #             RateLimitDescriptor(
+        #                 key="api_key",
+        #                 value=user_api_key_dict.api_key,
+        #                 rate_limit={
+        #                     "requests_per_unit": user_api_key_dict.rpm_limit
+        #                     or sys.maxsize,
+        #                     "window_size": self.window_size,
+        #                 },
+        #             )
+        #         )
 
-            # Check rate limits
-            # rate_limit_response = await self.should_rate_limit(
-            #     descriptors=descriptors,
-            #     parent_otel_span=user_api_key_dict.parent_otel_span,
-            #     read_only=True,
-            # )
+        #     # Check rate limits
+        #     # rate_limit_response = await self.should_rate_limit(
+        #     #     descriptors=descriptors,
+        #     #     parent_otel_span=user_api_key_dict.parent_otel_span,
+        #     #     read_only=True,
+        #     # )
 
-            # # Update response headers
-            # if hasattr(response, "_hidden_params"):
-            #     _hidden_params = getattr(response, "_hidden_params")
-            # else:
-            #     _hidden_params = None
+        #     # # Update response headers
+        #     # if hasattr(response, "_hidden_params"):
+        #     #     _hidden_params = getattr(response, "_hidden_params")
+        #     # else:
+        #     #     _hidden_params = None
 
-            # if _hidden_params is not None and (
-            #     isinstance(_hidden_params, BaseModel)
-            #     or isinstance(_hidden_params, dict)
-            # ):
-            #     if isinstance(_hidden_params, BaseModel):
-            #         _hidden_params = _hidden_params.model_dump()
+        #     # if _hidden_params is not None and (
+        #     #     isinstance(_hidden_params, BaseModel)
+        #     #     or isinstance(_hidden_params, dict)
+        #     # ):
+        #     #     if isinstance(_hidden_params, BaseModel):
+        #     #         _hidden_params = _hidden_params.model_dump()
 
-            #     _additional_headers = _hidden_params.get("additional_headers", {}) or {}
+        #     #     _additional_headers = _hidden_params.get("additional_headers", {}) or {}
 
-            #     # Add rate limit headers
-            #     for i, status in enumerate(rate_limit_response["statuses"]):
-            #         descriptor = descriptors[i]
-            #         prefix = f"x-ratelimit-{descriptor['key']}"
-            #         _additional_headers[f"{prefix}-remaining-requests"] = status[
-            #             "limit_remaining"
-            #         ]
-            #         _additional_headers[f"{prefix}-limit-requests"] = status[
-            #             "current_limit"
-            #         ]
+        #     #     # Add rate limit headers
+        #     #     for i, status in enumerate(rate_limit_response["statuses"]):
+        #     #         descriptor = descriptors[i]
+        #     #         prefix = f"x-ratelimit-{descriptor['key']}"
+        #     #         _additional_headers[f"{prefix}-remaining-requests"] = status[
+        #     #             "limit_remaining"
+        #     #         ]
+        #     #         _additional_headers[f"{prefix}-limit-requests"] = status[
+        #     #             "current_limit"
+        #     #         ]
 
-            #     setattr(
-            #         response,
-            #         "_hidden_params",
-            #         {**_hidden_params, "additional_headers": _additional_headers},
-            #     )
+        #     #     setattr(
+        #     #         response,
+        #     #         "_hidden_params",
+        #     #         {**_hidden_params, "additional_headers": _additional_headers},
+        #     #     )
 
-        except Exception as e:
-            verbose_proxy_logger.exception(
-                f"Error in rate limit post-call hook: {str(e)}"
-            )
+        # except Exception as e:
+        #     verbose_proxy_logger.exception(
+        #         f"Error in rate limit post-call hook: {str(e)}"
+        #     )

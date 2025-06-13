@@ -692,6 +692,10 @@ class GenerateRequestBase(LiteLLMPydanticObjectBase):
 
     model_config = ConfigDict(protected_namespaces=())
     model_rpm_limit: Optional[dict] = None
+    model_rph_limit: Optional[dict] = None
+    model_rpd_limit: Optional[dict] = None
+    model_rpw_limit: Optional[dict] = None
+    model_rpmo_limit: Optional[dict] = None
     model_tpm_limit: Optional[dict] = None
     guardrails: Optional[List[str]] = None
     blocked: Optional[bool] = None
@@ -2724,6 +2728,10 @@ class UserManagementEndpointParamDocStringEnums(str, enum.Enum):
     soft_budget_doc_str = """Optional[float] - Get alerts when user crosses given budget, doesn't block requests."""
     model_max_budget_doc_str = """Optional[dict] - Model-specific max budget for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-budgets-to-keys)"""
     model_rpm_limit_doc_str = """Optional[float] - Model-specific rpm limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
+    model_rph_limit_doc_str = """Optional[float] - Model-specific rph limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
+    model_rpd_limit_doc_str = """Optional[float] - Model-specific rpd limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
+    model_rpw_limit_doc_str = """Optional[float] - Model-specific rpw limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
+    model_rpmo_limit_doc_str = """Optional[float] - Model-specific rpmo limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
     model_tpm_limit_doc_str = """Optional[float] - Model-specific tpm limit for user. [Docs](https://docs.litellm.ai/docs/proxy/users#add-model-specific-limits-to-keys)"""
     spend_doc_str = """Optional[float] - Amount spent by user. Default is 0. Will be updated by proxy whenever user is used."""
     team_id_doc_str = """Optional[str] - [DEPRECATED PARAM] The team id of the user. Default is None."""

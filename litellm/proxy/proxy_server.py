@@ -295,6 +295,9 @@ from litellm.proxy.route_llm_request import route_request
 from litellm.proxy.spend_tracking.spend_management_endpoints import (
     router as spend_management_router,
 )
+from litellm.proxy.management_endpoints.rate_limit_management_endpoints import (
+    router as rate_limit_management_router,
+)
 from litellm.proxy.spend_tracking.spend_tracking_utils import get_logging_payload
 from litellm.proxy.types_utils.utils import get_instance_fn
 from litellm.proxy.ui_crud_endpoints.proxy_setting_endpoints import (
@@ -8294,3 +8297,4 @@ app.include_router(model_management_router)
 app.include_router(tag_management_router)
 app.include_router(enterprise_router)
 app.include_router(ui_discovery_endpoints_router)
+app.include_router(rate_limit_management_router)
