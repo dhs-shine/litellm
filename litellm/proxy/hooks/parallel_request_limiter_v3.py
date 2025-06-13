@@ -408,61 +408,61 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         descriptors = []
 
         # API Key rate limits
-        if user_api_key_dict.api_key:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="api_key",
-                    value=user_api_key_dict.api_key,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.tpm_limit,
-                        "max_parallel_requests": user_api_key_dict.max_parallel_requests,
-                        "window_size": self.window_size,  # 1 minute window
-                    },
-                )
-            )
+        # if user_api_key_dict.api_key:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="api_key",
+        #             value=user_api_key_dict.api_key,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.tpm_limit,
+        #                 "max_parallel_requests": user_api_key_dict.max_parallel_requests,
+        #                 "window_size": self.window_size,  # 1 minute window
+        #             },
+        #         )
+        #     )
 
         # User rate limits
-        if user_api_key_dict.user_id:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="user",
-                    value=user_api_key_dict.user_id,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.user_rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.user_tpm_limit,
-                        "window_size": self.window_size,
-                    },
-                )
-            )
+        # if user_api_key_dict.user_id:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="user",
+        #             value=user_api_key_dict.user_id,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.user_rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.user_tpm_limit,
+        #                 "window_size": self.window_size,
+        #             },
+        #         )
+        #     )
 
         # Team rate limits
-        if user_api_key_dict.team_id:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="team",
-                    value=user_api_key_dict.team_id,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.team_rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.team_tpm_limit,
-                        "window_size": self.window_size,
-                    },
-                )
-            )
+        # if user_api_key_dict.team_id:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="team",
+        #             value=user_api_key_dict.team_id,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.team_rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.team_tpm_limit,
+        #                 "window_size": self.window_size,
+        #             },
+        #         )
+        #     )
 
         # End user rate limits
-        if user_api_key_dict.end_user_id:
-            descriptors.append(
-                RateLimitDescriptor(
-                    key="end_user",
-                    value=user_api_key_dict.end_user_id,
-                    rate_limit={
-                        "requests_per_unit": user_api_key_dict.end_user_rpm_limit,
-                        "tokens_per_unit": user_api_key_dict.end_user_tpm_limit,
-                        "window_size": self.window_size,
-                    },
-                )
-            )
+        # if user_api_key_dict.end_user_id:
+        #     descriptors.append(
+        #         RateLimitDescriptor(
+        #             key="end_user",
+        #             value=user_api_key_dict.end_user_id,
+        #             rate_limit={
+        #                 "requests_per_unit": user_api_key_dict.end_user_rpm_limit,
+        #                 "tokens_per_unit": user_api_key_dict.end_user_tpm_limit,
+        #                 "window_size": self.window_size,
+        #             },
+        #         )
+        #     )
 
         # Model rate limits
         requested_model = data.get("model", None)
@@ -570,15 +570,15 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
 
             # Get metadata from kwargs
             user_api_key = kwargs["litellm_params"]["metadata"].get("user_api_key")
-            user_api_key_user_id = kwargs["litellm_params"]["metadata"].get(
-                "user_api_key_user_id"
-            )
-            user_api_key_team_id = kwargs["litellm_params"]["metadata"].get(
-                "user_api_key_team_id"
-            )
-            user_api_key_end_user_id = kwargs.get("user") or kwargs["litellm_params"][
-                "metadata"
-            ].get("user_api_key_end_user_id")
+            # user_api_key_user_id = kwargs["litellm_params"]["metadata"].get(
+            #     "user_api_key_user_id"
+            # )
+            # user_api_key_team_id = kwargs["litellm_params"]["metadata"].get(
+            #     "user_api_key_team_id"
+            # )
+            # user_api_key_end_user_id = kwargs.get("user") or kwargs["litellm_params"][
+            #     "metadata"
+            # ].get("user_api_key_end_user_id")
             model_group = get_model_group_from_litellm_kwargs(kwargs)
 
             # Get total tokens from response
@@ -592,62 +592,62 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             pipeline_operations: List[RedisPipelineIncrementOperation] = []
 
             # API Key TPM
-            if user_api_key:
-                # MAX PARALLEL REQUESTS - only support for API Key, just decrement the counter
-                counter_key = self.create_rate_limit_keys(
-                    key="api_key",
-                    value=user_api_key,
-                    rate_limit_type="max_parallel_requests",
-                )
-                pipeline_operations.append(
-                    RedisPipelineIncrementOperation(
-                        key=counter_key,
-                        increment_value=-1,
-                        ttl=self.window_size,
-                    )
-                )
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="api_key",
-                        value=user_api_key,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key:
+            #     # MAX PARALLEL REQUESTS - only support for API Key, just decrement the counter
+            #     counter_key = self.create_rate_limit_keys(
+            #         key="api_key",
+            #         value=user_api_key,
+            #         rate_limit_type="max_parallel_requests",
+            #     )
+            #     pipeline_operations.append(
+            #         RedisPipelineIncrementOperation(
+            #             key=counter_key,
+            #             increment_value=-1,
+            #             ttl=self.window_size,
+            #         )
+            #     )
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="api_key",
+            #             value=user_api_key,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # User TPM
-            if user_api_key_user_id:
-                # TPM
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="user",
-                        value=user_api_key_user_id,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key_user_id:
+            #     # TPM
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="user",
+            #             value=user_api_key_user_id,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # Team TPM
-            if user_api_key_team_id:
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="team",
-                        value=user_api_key_team_id,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key_team_id:
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="team",
+            #             value=user_api_key_team_id,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # End User TPM
-            if user_api_key_end_user_id:
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="end_user",
-                        value=user_api_key_end_user_id,
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if user_api_key_end_user_id:
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="end_user",
+            #             value=user_api_key_end_user_id,
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # Model-specific TPM
             if model_group and user_api_key:
