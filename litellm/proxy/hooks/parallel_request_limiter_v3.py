@@ -86,6 +86,8 @@ return results
 WINDOW_SIZE_RPM = 60  # 1 minute
 WINDOW_SIZE_RPH = 3600  # 1 hour
 WINDOW_SIZE_RPD = 86400  # 1 day
+WINDOW_SIZE_RPW = 604800  # 1 week
+WINDOW_SIZE_RPMO = 2592000  # 1 month (30 days)
 
 
 class RateLimitDescriptorRateLimitObject(TypedDict, total=False):
@@ -311,6 +313,8 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         rpm_descriptors = []
         rph_descriptors = []
         rpd_descriptors = []
+        rpw_descriptors = []
+        rpmo_descriptors = []
 
         for descriptor in descriptors:
             rate_limit = descriptor.get("rate_limit", {}) or {}
@@ -322,6 +326,10 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                 rph_descriptors.append(descriptor)
             elif window_size == WINDOW_SIZE_RPD:  # 24 hour window
                 rpd_descriptors.append(descriptor)
+            elif window_size == WINDOW_SIZE_RPW:
+                rpw_descriptors.append(descriptor)
+            elif window_size == WINDOW_SIZE_RPMO:
+                rpmo_descriptors.append(descriptor)
 
         # Process descriptors in order: rpm -> rph -> rpd
         all_statuses = []
@@ -363,6 +371,29 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             )
             all_statuses.extend(rpd_response["statuses"])
             if rpd_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+                # Process RPD limits if RPM and RPH passed
+
+        if rpw_descriptors:
+            rpw_response = await self._process_rate_limits(
+                descriptors=rpw_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPW,
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rpw_response["statuses"])
+            if rpw_response["overall_code"] == "OVER_LIMIT":
+                overall_code = "OVER_LIMIT"
+
+        if rpmo_descriptors:
+            rpmo_response = await self._process_rate_limits(
+                descriptors=rpw_descriptors,
+                now_int=now_int,
+                window_size=WINDOW_SIZE_RPMO,
+                parent_otel_span=parent_otel_span,
+            )
+            all_statuses.extend(rpmo_response["statuses"])
+            if rpmo_response["overall_code"] == "OVER_LIMIT":
                 overall_code = "OVER_LIMIT"
 
         return RateLimitResponse(overall_code=overall_code, statuses=all_statuses)
@@ -477,7 +508,9 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             get_key_model_rpm_limit,
             get_key_model_rph_limit,
             get_key_model_rpd_limit,
-            get_key_model_tpm_limit,
+            get_key_model_rpw_limit,
+            get_key_model_rpmo_limit,
+            # get_key_model_tpm_limit,
         )
 
         verbose_proxy_logger.debug("Inside Rate Limit Pre-Call Hook")
@@ -545,42 +578,62 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         # Model rate limits
         requested_model = data.get("model", None)
         if requested_model and (
-            get_key_model_tpm_limit(user_api_key_dict) is not None
-            or get_key_model_rpm_limit(user_api_key_dict) is not None
+            # get_key_model_tpm_limit(user_api_key_dict) is not None
+            get_key_model_rpm_limit(user_api_key_dict) is not None
             or get_key_model_rph_limit(user_api_key_dict) is not None
             or get_key_model_rpd_limit(user_api_key_dict) is not None
+            or get_key_model_rpw_limit(user_api_key_dict) is not None
+            or get_key_model_rpmo_limit(user_api_key_dict) is not None
         ):
-            _tpm_limit_for_key_model = get_key_model_tpm_limit(user_api_key_dict) or {}
+            # _tpm_limit_for_key_model = get_key_model_tpm_limit(user_api_key_dict) or {}
             _rpm_limit_for_key_model = get_key_model_rpm_limit(user_api_key_dict) or {}
             _rph_limit_for_key_model = get_key_model_rph_limit(user_api_key_dict) or {}
             _rpd_limit_for_key_model = get_key_model_rpd_limit(user_api_key_dict) or {}
+            _rpw_limit_for_key_model = get_key_model_rpw_limit(user_api_key_dict) or {}
+            _rpmo_limit_for_key_model = get_key_model_rpmo_limit(user_api_key_dict) or {}
             should_check_rate_limit = False
-            if requested_model in _tpm_limit_for_key_model:
+            # if requested_model in _tpm_limit_for_key_model:
+            #     should_check_rate_limit = True
+            if requested_model in _rpm_limit_for_key_model:
                 should_check_rate_limit = True
-            elif requested_model in _rpm_limit_for_key_model:
+            if requested_model in _rph_limit_for_key_model:
+                should_check_rate_limit = True
+            if requested_model in _rpd_limit_for_key_model:
+                should_check_rate_limit = True
+            if requested_model in _rpw_limit_for_key_model:
+                should_check_rate_limit = True
+            if requested_model in _rpmo_limit_for_key_model:
                 should_check_rate_limit = True
 
             if should_check_rate_limit:
-                model_specific_tpm_limit: Optional[int] = None
+                # model_specific_tpm_limit: Optional[int] = None
                 model_specific_rpm_limit: Optional[int] = None
                 model_specific_rph_limit: Optional[int] = None
+                model_specific_rph_limit: Optional[int] = None
                 model_specific_rpd_limit: Optional[int] = None
-                if requested_model in _tpm_limit_for_key_model:
-                    model_specific_tpm_limit = _tpm_limit_for_key_model[requested_model]
+                model_specific_rpw_limit: Optional[int] = None
+                model_specific_rpmo_limit: Optional[int] = None
+                # if requested_model in _tpm_limit_for_key_model:
+                #     model_specific_tpm_limit = _tpm_limit_for_key_model[requested_model]
                 if requested_model in _rpm_limit_for_key_model:
                     model_specific_rpm_limit = _rpm_limit_for_key_model[requested_model]
                 if requested_model in _rph_limit_for_key_model:
                     model_specific_rph_limit = _rph_limit_for_key_model[requested_model]
                 if requested_model in _rpd_limit_for_key_model:
                     model_specific_rpd_limit = _rpd_limit_for_key_model[requested_model]
-                if model_specific_rpm_limit is not None or model_specific_tpm_limit is not None:
+                if requested_model in _rpw_limit_for_key_model:
+                    model_specific_rpw_limit = _rpw_limit_for_key_model[requested_model]
+                if requested_model in _rpmo_limit_for_key_model:
+                    model_specific_rpmo_limit = _rpmo_limit_for_key_model[requested_model]
+                # if model_specific_rpm_limit is not None or model_specific_tpm_limit is not None:
+                if model_specific_rpm_limit is not None:
                     descriptors.append(
                         RateLimitDescriptor(
                             key="model_per_key",
-                            value=f"{user_api_key_dict.api_key}:{requested_model}:rpm",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpm",
                             rate_limit={
                                 "requests_per_unit": model_specific_rpm_limit,
-                                "tokens_per_unit": model_specific_tpm_limit,
+                                # "tokens_per_unit": model_specific_tpm_limit,
                                 "window_size": WINDOW_SIZE_RPM,  # 1 minute window
                             },
                         )
@@ -589,7 +642,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                     descriptors.append(
                         RateLimitDescriptor(
                             key="model_per_key",
-                            value=f"{user_api_key_dict.api_key}:{requested_model}:rph",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rph",
                             rate_limit={
                                 "requests_per_unit": model_specific_rph_limit,
                                 "window_size": WINDOW_SIZE_RPH,  # 1 hour window
@@ -600,10 +653,32 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                     descriptors.append(
                         RateLimitDescriptor(
                             key="model_per_key",
-                            value=f"{user_api_key_dict.api_key}:{requested_model}:rpd",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpd",
                             rate_limit={
                                 "requests_per_unit": model_specific_rpd_limit,
                                 "window_size": WINDOW_SIZE_RPD,  # 24 hour window
+                            },
+                        )
+                    )
+                if model_specific_rpw_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpw",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rpw_limit,
+                                "window_size": WINDOW_SIZE_RPW,
+                            },
+                        )
+                    )
+                if model_specific_rpmo_limit is not None:
+                    descriptors.append(
+                        RateLimitDescriptor(
+                            key="model_per_key",
+                            value=f"{user_api_key_dict.user_id}:{requested_model}:rpmo",
+                            rate_limit={
+                                "requests_per_unit": model_specific_rpmo_limit,
+                                "window_size": WINDOW_SIZE_RPW,
                             },
                         )
                     )
@@ -634,33 +709,33 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
                         headers=headers,
                     )
 
-    def _create_pipeline_operations(
-        self,
-        key: str,
-        value: str,
-        rate_limit_type: Literal["requests", "tokens", "max_parallel_requests"],
-        total_tokens: int,
-    ) -> List["RedisPipelineIncrementOperation"]:
-        """
-        Create pipeline operations for TPM increments
-        """
-        from litellm.types.caching import RedisPipelineIncrementOperation
+    # def _create_pipeline_operations(
+    #     self,
+    #     key: str,
+    #     value: str,
+    #     rate_limit_type: Literal["requests", "tokens", "max_parallel_requests"],
+    #     total_tokens: int,
+    # ) -> List["RedisPipelineIncrementOperation"]:
+    #     """
+    #     Create pipeline operations for TPM increments
+    #     """
+    #     from litellm.types.caching import RedisPipelineIncrementOperation
 
-        pipeline_operations: List[RedisPipelineIncrementOperation] = []
-        counter_key = self.create_rate_limit_keys(
-            key=key,
-            value=value,
-            rate_limit_type="tokens",
-        )
-        pipeline_operations.append(
-            RedisPipelineIncrementOperation(
-                key=counter_key,
-                increment_value=total_tokens,
-                ttl=self.window_size,
-            )
-        )
+    #     pipeline_operations: List[RedisPipelineIncrementOperation] = []
+    #     counter_key = self.create_rate_limit_keys(
+    #         key=key,
+    #         value=value,
+    #         rate_limit_type="tokens",
+    #     )
+    #     pipeline_operations.append(
+    #         RedisPipelineIncrementOperation(
+    #             key=counter_key,
+    #             increment_value=total_tokens,
+    #             ttl=self.window_size,
+    #         )
+    #     )
 
-        return pipeline_operations
+    #     return pipeline_operations
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         """
@@ -763,15 +838,15 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             #     )
 
             # Model-specific TPM
-            if model_group and user_api_key:
-                pipeline_operations.extend(
-                    self._create_pipeline_operations(
-                        key="model_per_key",
-                        value=f"{user_api_key}:{model_group}",
-                        rate_limit_type="tokens",
-                        total_tokens=total_tokens,
-                    )
-                )
+            # if model_group and user_api_key:
+            #     pipeline_operations.extend(
+            #         self._create_pipeline_operations(
+            #             key="model_per_key",
+            #             value=f"{user_api_key}:{model_group}",
+            #             rate_limit_type="tokens",
+            #             total_tokens=total_tokens,
+            #         )
+            #     )
 
             # Execute all increments in a single pipeline
             if pipeline_operations:
@@ -797,63 +872,64 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
         """
         Post-call hook to update rate limit headers in the response.
         """
-        try:
-            descriptors = []
+        pass
+        # try:
+        #     descriptors = []
 
-            # API Key
-            if user_api_key_dict.api_key:
-                descriptors.append(
-                    RateLimitDescriptor(
-                        key="api_key",
-                        value=user_api_key_dict.api_key,
-                        rate_limit={
-                            "requests_per_unit": user_api_key_dict.rpm_limit
-                            or sys.maxsize,
-                            "window_size": self.window_size,
-                        },
-                    )
-                )
+        #     # API Key
+        #     if user_api_key_dict.api_key:
+        #         descriptors.append(
+        #             RateLimitDescriptor(
+        #                 key="api_key",
+        #                 value=user_api_key_dict.api_key,
+        #                 rate_limit={
+        #                     "requests_per_unit": user_api_key_dict.rpm_limit
+        #                     or sys.maxsize,
+        #                     "window_size": self.window_size,
+        #                 },
+        #             )
+        #         )
 
-            # Check rate limits
-            # rate_limit_response = await self.should_rate_limit(
-            #     descriptors=descriptors,
-            #     parent_otel_span=user_api_key_dict.parent_otel_span,
-            #     read_only=True,
-            # )
+        #     # Check rate limits
+        #     # rate_limit_response = await self.should_rate_limit(
+        #     #     descriptors=descriptors,
+        #     #     parent_otel_span=user_api_key_dict.parent_otel_span,
+        #     #     read_only=True,
+        #     # )
 
-            # # Update response headers
-            # if hasattr(response, "_hidden_params"):
-            #     _hidden_params = getattr(response, "_hidden_params")
-            # else:
-            #     _hidden_params = None
+        #     # # Update response headers
+        #     # if hasattr(response, "_hidden_params"):
+        #     #     _hidden_params = getattr(response, "_hidden_params")
+        #     # else:
+        #     #     _hidden_params = None
 
-            # if _hidden_params is not None and (
-            #     isinstance(_hidden_params, BaseModel)
-            #     or isinstance(_hidden_params, dict)
-            # ):
-            #     if isinstance(_hidden_params, BaseModel):
-            #         _hidden_params = _hidden_params.model_dump()
+        #     # if _hidden_params is not None and (
+        #     #     isinstance(_hidden_params, BaseModel)
+        #     #     or isinstance(_hidden_params, dict)
+        #     # ):
+        #     #     if isinstance(_hidden_params, BaseModel):
+        #     #         _hidden_params = _hidden_params.model_dump()
 
-            #     _additional_headers = _hidden_params.get("additional_headers", {}) or {}
+        #     #     _additional_headers = _hidden_params.get("additional_headers", {}) or {}
 
-            #     # Add rate limit headers
-            #     for i, status in enumerate(rate_limit_response["statuses"]):
-            #         descriptor = descriptors[i]
-            #         prefix = f"x-ratelimit-{descriptor['key']}"
-            #         _additional_headers[f"{prefix}-remaining-requests"] = status[
-            #             "limit_remaining"
-            #         ]
-            #         _additional_headers[f"{prefix}-limit-requests"] = status[
-            #             "current_limit"
-            #         ]
+        #     #     # Add rate limit headers
+        #     #     for i, status in enumerate(rate_limit_response["statuses"]):
+        #     #         descriptor = descriptors[i]
+        #     #         prefix = f"x-ratelimit-{descriptor['key']}"
+        #     #         _additional_headers[f"{prefix}-remaining-requests"] = status[
+        #     #             "limit_remaining"
+        #     #         ]
+        #     #         _additional_headers[f"{prefix}-limit-requests"] = status[
+        #     #             "current_limit"
+        #     #         ]
 
-            #     setattr(
-            #         response,
-            #         "_hidden_params",
-            #         {**_hidden_params, "additional_headers": _additional_headers},
-            #     )
+        #     #     setattr(
+        #     #         response,
+        #     #         "_hidden_params",
+        #     #         {**_hidden_params, "additional_headers": _additional_headers},
+        #     #     )
 
-        except Exception as e:
-            verbose_proxy_logger.exception(
-                f"Error in rate limit post-call hook: {str(e)}"
-            )
+        # except Exception as e:
+        #     verbose_proxy_logger.exception(
+        #         f"Error in rate limit post-call hook: {str(e)}"
+        #     )

@@ -462,6 +462,38 @@ def get_key_model_rpd_limit(
     return None
 
 
+def get_key_model_rpw_limit(
+    user_api_key_dict: UserAPIKeyAuth,
+) -> Optional[Dict[str, int]]:
+    if user_api_key_dict.metadata:
+        if "model_rpw_limit" in user_api_key_dict.metadata:
+            return user_api_key_dict.metadata["model_rpw_limit"]
+    elif user_api_key_dict.model_max_budget:
+        model_rpw_limit: Dict[str, Any] = {}
+        for model, budget in user_api_key_dict.model_max_budget.items():
+            if "rpw_limit" in budget and budget["rpw_limit"] is not None:
+                model_rpw_limit[model] = budget["rpw_limit"]
+        return model_rpw_limit
+
+    return None
+
+
+def get_key_model_rpmo_limit(
+    user_api_key_dict: UserAPIKeyAuth,
+) -> Optional[Dict[str, int]]:
+    if user_api_key_dict.metadata:
+        if "model_rpmo_limit" in user_api_key_dict.metadata:
+            return user_api_key_dict.metadata["model_rpmo_limit"]
+    elif user_api_key_dict.model_max_budget:
+        model_rpmo_limit: Dict[str, Any] = {}
+        for model, budget in user_api_key_dict.model_max_budget.items():
+            if "rpmo_limit" in budget and budget["rpmo_limit"] is not None:
+                model_rpmo_limit[model] = budget["rpmo_limit"]
+        return model_rpmo_limit
+
+    return None
+
+
 def get_key_model_tpm_limit(
     user_api_key_dict: UserAPIKeyAuth,
 ) -> Optional[Dict[str, int]]:
