@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Optional
 
 from litellm.secret_managers.main import get_secret_str
@@ -28,5 +29,33 @@ def initialize_standard_callback_dynamic_params(
                 ):
                     _param_value = get_secret_str(secret_name=_param_value)
                 standard_callback_dynamic_params[param] = _param_value  # type: ignore
+
+        # New logic for x-application-id
+        proxy_server_request = kwargs.get("proxy_server_request")
+        if proxy_server_request and hasattr(proxy_server_request, "headers"):
+            headers = proxy_server_request.headers
+            if headers and hasattr(headers, "get"):
+                application_id = headers.get("x-application-id")
+                if application_id and isinstance(application_id, str):
+                    sanitized_app_id = application_id.replace("-", "_").upper()
+
+                    public_key_env_name = f"{sanitized_app_id}_LANGFUSE_PUBLIC_KEY"
+                    secret_key_env_name = f"{sanitized_app_id}_LANGFUSE_SECRET_KEY"
+                    host_env_name = f"{sanitized_app_id}_LANGFUSE_HOST"
+
+                    public_key = os.getenv(public_key_env_name)
+                    secret_key = os.getenv(secret_key_env_name)
+                    host = os.getenv(host_env_name)
+
+                    if public_key:
+                        standard_callback_dynamic_params[
+                            "langfuse_public_key"
+                        ] = public_key
+                    if secret_key:
+                        standard_callback_dynamic_params[
+                            "langfuse_secret_key"
+                        ] = secret_key
+                    if host:
+                        standard_callback_dynamic_params["langfuse_host"] = host
 
     return standard_callback_dynamic_params
