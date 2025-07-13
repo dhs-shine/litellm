@@ -1,9 +1,18 @@
 model_list:
-  - model_name: gemini/*
+  - model_name: anthropic/*
     litellm_params:
-      model: gemini/*
-      api_key: os.environ/GEMINI_API_KEY
-  - model_name: "anthropic/*"
+      model: anthropic/*
+  - model_name: openai/*
     litellm_params:
-      model: "anthropic/*"
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: openai/*
+
+guardrails:
+  - guardrail_name: "bedrock-pre-guard"
+    litellm_params:
+      guardrail: bedrock  # supported values: "aporia", "bedrock", "lakera"
+      mode: "during_call"
+      guardrailIdentifier: ff6ujrregl1q
+      guardrailVersion: "DRAFT"
+
+litellm_settings:
+  callbacks: ["datadog_llm_observability"]
