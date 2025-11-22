@@ -142,10 +142,20 @@ class CustomStreamWrapper:
             True if self.check_send_stream_usage(self.stream_options) else False
         )
         self.tool_call = False
-        self.chunks: List = (
-            []
-        )  # keep track of the returned chunks - used for calculating the input/output tokens for stream options
-        self.chunk_buffer: List = [] # used for safety check, keeps track of last n chunks
+        
+        # Incremental accumulators for building final response (replaces self.chunks)
+        self.accumulated_content: str = ""
+        self.accumulated_tool_calls: Dict[int, Dict] = {}  # index -> tool_call dict
+        self.accumulated_function_call: Optional[Dict] = None
+        self.accumulated_reasoning_content: str = ""
+        self.accumulated_thinking_blocks: List = []
+        self.accumulated_audio: Optional[Dict] = None
+        self.accumulated_annotations: Optional[List] = None
+        self.final_finish_reason: Optional[str] = None
+        
+        # Keep small buffer for safety checks only
+        self.chunk_buffer: List = []  # used for safety check, keeps track of last n chunks
+        
         self.is_function_call = self.check_is_function_call(logging_obj=logging_obj)
         self.created: Optional[int] = None
         self.usage_so_far: Usage = Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
@@ -1618,6 +1628,122 @@ class CustomStreamWrapper:
         ## SYNC LOGGING
         self.logging_obj.success_handler(processed_chunk, None, None, cache_hit)
 
+    def _merge_tool_call_chunk(self, tool_call_chunk):
+        """Merge a tool call chunk into accumulated_tool_calls."""
+        index = tool_call_chunk.index
+        
+        if index not in self.accumulated_tool_calls:
+            self.accumulated_tool_calls[index] = {
+                "id": tool_call_chunk.id or "",
+                "type": tool_call_chunk.type or "function",
+                "function": {
+                    "name": "",
+                    "arguments": ""
+                }
+            }
+        
+        # Merge function data
+        if tool_call_chunk.function:
+            if tool_call_chunk.function.name:
+                self.accumulated_tool_calls[index]["function"]["name"] += tool_call_chunk.function.name
+            if tool_call_chunk.function.arguments:
+                self.accumulated_tool_calls[index]["function"]["arguments"] += tool_call_chunk.function.arguments
+        
+        # Update ID if provided
+        if tool_call_chunk.id:
+            self.accumulated_tool_calls[index]["id"] = tool_call_chunk.id
+
+    def _merge_function_call_chunk(self, function_call_chunk):
+        """Merge a function call chunk into accumulated_function_call."""
+        if self.accumulated_function_call is None:
+            self.accumulated_function_call = {
+                "name": "",
+                "arguments": ""
+            }
+        
+        if hasattr(function_call_chunk, "name") and function_call_chunk.name:
+            self.accumulated_function_call["name"] += function_call_chunk.name
+        if hasattr(function_call_chunk, "arguments") and function_call_chunk.arguments:
+            self.accumulated_function_call["arguments"] += function_call_chunk.arguments
+
+    def build_final_response(self) -> ModelResponse:
+        """Build final ModelResponse from accumulated data."""
+        from litellm.types.utils import Choices, Message, ChatCompletionMessageToolCall, Function, FunctionCall
+        
+        # Create base response
+        response = ModelResponse(
+            id=self.response_id or f"chatcmpl-{uuid.uuid4()}",
+            created=self.created or int(time.time()),
+            model=self.model,
+            object="chat.completion",
+            system_fingerprint=self.system_fingerprint,
+        )
+        
+        # Build message
+        message = Message(
+            role="assistant",
+            content=self.accumulated_content if self.accumulated_content else None,
+        )
+        
+        # Add tool calls if present
+        if self.accumulated_tool_calls:
+            tool_calls_list = []
+            for idx in sorted(self.accumulated_tool_calls.keys()):
+                tc_data = self.accumulated_tool_calls[idx]
+                tool_call = ChatCompletionMessageToolCall(
+                    id=tc_data["id"],
+                    type=tc_data["type"],
+                    function=Function(
+                        name=tc_data["function"]["name"],
+                        arguments=tc_data["function"]["arguments"]
+                    )
+                )
+                tool_calls_list.append(tool_call)
+            message.tool_calls = tool_calls_list
+            message.content = None  # OpenAI spec: content is None when tool_calls present
+        
+        # Add function call if present
+        if self.accumulated_function_call:
+            message.function_call = FunctionCall(
+                name=self.accumulated_function_call["name"],
+                arguments=self.accumulated_function_call["arguments"]
+            )
+            message.content = None
+        
+        # Add reasoning content if present
+        if self.accumulated_reasoning_content:
+            message.reasoning_content = self.accumulated_reasoning_content
+        
+        # Add thinking blocks if present
+        if self.accumulated_thinking_blocks:
+            message.thinking_blocks = self.accumulated_thinking_blocks
+        
+        # Add audio if present
+        if self.accumulated_audio:
+            message.audio = self.accumulated_audio
+        
+        # Add annotations if present
+        if self.accumulated_annotations:
+            message.annotations = self.accumulated_annotations
+        
+        # Create choice
+        choice = Choices(
+            finish_reason=self.final_finish_reason or self.received_finish_reason or "stop",
+            index=0,
+            message=message
+        )
+        
+        response.choices = [choice]
+        
+        # Add usage
+        response.usage = self.usage_so_far
+        
+        # Add hidden params
+        response._hidden_params = self._hidden_params
+        
+        return response
+
+
     def finish_reason_handler(self):
         model_response = self.model_response_creator()
         _finish_reason = self.received_finish_reason or self.intermittent_finish_reason
@@ -1683,20 +1809,49 @@ class CustomStreamWrapper:
                     self.rules.post_call_rules(
                         input=self.response_uptil_now, model=self.model
                     )
-                    # HANDLE STREAM OPTIONS
-                    if litellm.disable_streaming_logging:
-                        self.chunk_buffer.append(response)
-                        if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
-                            self.chunk_buffer.pop(0)
-                        
-                        # Incremental usage calculation
-                        if hasattr(response, "usage") and isinstance(response.usage, Usage):
-                            self.usage_so_far.prompt_tokens = response.usage.prompt_tokens
-                            self.usage_so_far.completion_tokens = response.usage.completion_tokens
-                            self.usage_so_far.total_tokens = response.usage.total_tokens
-                    else:
-                        self.chunks.append(response)
-                        self.chunk_buffer.append(response) # keep sync with chunks for safety check logic
+                    # ACCUMULATE DATA INCREMENTALLY (v2)
+                    # Add to chunk_buffer for safety checks
+                    self.chunk_buffer.append(response)
+                    if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
+                        self.chunk_buffer.pop(0)
+                    
+                    # Accumulate content
+                    if isinstance(choice, StreamingChoices) and choice.delta.content:
+                        self.accumulated_content += choice.delta.content
+                    
+                    # Accumulate tool calls
+                    if isinstance(choice, StreamingChoices) and choice.delta.tool_calls:
+                        for tc in choice.delta.tool_calls:
+                            self._merge_tool_call_chunk(tc)
+                            self.tool_call = True
+                    
+                    # Accumulate function call
+                    if isinstance(choice, StreamingChoices) and choice.delta.function_call:
+                        self._merge_function_call_chunk(choice.delta.function_call)
+                    
+                    # Accumulate reasoning content
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "reasoning_content") and choice.delta.reasoning_content:
+                        self.accumulated_reasoning_content += choice.delta.reasoning_content
+                    
+                    # Accumulate thinking blocks
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "thinking_blocks") and choice.delta.thinking_blocks:
+                        self.accumulated_thinking_blocks.extend(choice.delta.thinking_blocks)
+                    
+                    # Accumulate audio
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "audio") and choice.delta.audio:
+                        self.accumulated_audio = choice.delta.audio
+                    
+                    # Accumulate annotations
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "annotations") and choice.delta.annotations:
+                        self.accumulated_annotations = choice.delta.annotations
+                    
+                    # Update usage (keep only latest)
+                    if hasattr(response, "usage") and isinstance(response.usage, Usage):
+                        self.usage_so_far = response.usage
+                    
+                    # Update finish reason
+                    if isinstance(choice, StreamingChoices) and choice.finish_reason:
+                        self.final_finish_reason = choice.finish_reason
 
                     if hasattr(
                         response, "usage"
@@ -1721,25 +1876,15 @@ class CustomStreamWrapper:
                             continue
                     # add usage as hidden param
                     if self.sent_last_chunk is True and self.stream_options is None:
-                        if litellm.disable_streaming_logging:
-                            usage = self.usage_so_far
-                        else:
-                            usage = calculate_total_usage(chunks=self.chunks)
+                        usage = self.usage_so_far
                         response._hidden_params["usage"] = usage
                     # RETURN RESULT
                     return response
 
         except StopIteration:
             if self.sent_last_chunk is True:
-                if litellm.disable_streaming_logging:
-                    # Skip full reconstruction if logging is disabled
-                    complete_streaming_response = None
-                else:
-                    complete_streaming_response = litellm.stream_chunk_builder(
-                        chunks=self.chunks,
-                        messages=self.messages,
-                        logging_obj=self.logging_obj,
-                    )
+                # Build final response from accumulated data (v2)
+                complete_streaming_response = self.build_final_response()
 
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
@@ -1777,10 +1922,7 @@ class CustomStreamWrapper:
                 self.sent_last_chunk = True
                 processed_chunk = self.finish_reason_handler()
                 if self.stream_options is None:  # add usage as hidden param
-                    if litellm.disable_streaming_logging:
-                        usage = self.usage_so_far
-                    else:
-                        usage = calculate_total_usage(chunks=self.chunks)
+                    usage = self.usage_so_far
                     processed_chunk._hidden_params["usage"] = usage
                 ## LOGGING
                 executor.submit(
@@ -1875,19 +2017,50 @@ class CustomStreamWrapper:
                     self.rules.post_call_rules(
                         input=self.response_uptil_now, model=self.model
                     )
-                    if litellm.disable_streaming_logging:
-                        self.chunk_buffer.append(processed_chunk)
-                        if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
-                            self.chunk_buffer.pop(0)
-                        
-                        # Incremental usage calculation
-                        if hasattr(processed_chunk, "usage") and isinstance(processed_chunk.usage, Usage):
-                            self.usage_so_far.prompt_tokens = processed_chunk.usage.prompt_tokens
-                            self.usage_so_far.completion_tokens = processed_chunk.usage.completion_tokens
-                            self.usage_so_far.total_tokens = processed_chunk.usage.total_tokens
-                    else:
-                        self.chunks.append(processed_chunk)
-                        self.chunk_buffer.append(processed_chunk)
+                    # ACCUMULATE DATA INCREMENTALLY (v2)
+                    # Add to chunk_buffer for safety checks
+                    self.chunk_buffer.append(processed_chunk)
+                    if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
+                        self.chunk_buffer.pop(0)
+                    
+                    # Accumulate content
+                    if isinstance(choice, StreamingChoices) and choice.delta.content:
+                        self.accumulated_content += choice.delta.content
+                    
+                    # Accumulate tool calls
+                    if isinstance(choice, StreamingChoices) and choice.delta.tool_calls:
+                        for tc in choice.delta.tool_calls:
+                            self._merge_tool_call_chunk(tc)
+                            self.tool_call = True
+                    
+                    # Accumulate function call
+                    if isinstance(choice, StreamingChoices) and choice.delta.function_call:
+                        self._merge_function_call_chunk(choice.delta.function_call)
+                    
+                    # Accumulate reasoning content
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "reasoning_content") and choice.delta.reasoning_content:
+                        self.accumulated_reasoning_content += choice.delta.reasoning_content
+                    
+                    # Accumulate thinking blocks
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "thinking_blocks") and choice.delta.thinking_blocks:
+                        self.accumulated_thinking_blocks.extend(choice.delta.thinking_blocks)
+                    
+                    # Accumulate audio
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "audio") and choice.delta.audio:
+                        self.accumulated_audio = choice.delta.audio
+                    
+                    # Accumulate annotations
+                    if isinstance(choice, StreamingChoices) and hasattr(choice.delta, "annotations") and choice.delta.annotations:
+                        self.accumulated_annotations = choice.delta.annotations
+                    
+                    # Update usage (keep only latest)
+                    if hasattr(processed_chunk, "usage") and isinstance(processed_chunk.usage, Usage):
+                        self.usage_so_far = processed_chunk.usage
+                    
+                    # Update finish reason
+                    if isinstance(choice, StreamingChoices) and choice.finish_reason:
+                        self.final_finish_reason = choice.finish_reason
+                    
                     if hasattr(
                         processed_chunk, "usage"
                     ):  # remove usage from chunk, only send on final chunk
@@ -1910,10 +2083,7 @@ class CustomStreamWrapper:
 
                     # add usage as hidden param
                     if self.sent_last_chunk is True and self.stream_options is None:
-                        if litellm.disable_streaming_logging:
-                            usage = self.usage_so_far
-                        else:
-                            usage = calculate_total_usage(chunks=self.chunks)
+                        usage = self.usage_so_far
                         processed_chunk._hidden_params["usage"] = usage
                     
                     # Call post-call streaming deployment hook for final chunk
@@ -1970,15 +2140,8 @@ class CustomStreamWrapper:
                         return processed_chunk
         except (StopAsyncIteration, StopIteration):
             if self.sent_last_chunk is True:
-                # log the final chunk with accurate streaming values
-                if litellm.disable_streaming_logging:
-                     complete_streaming_response = None
-                else:
-                    complete_streaming_response = litellm.stream_chunk_builder(
-                        chunks=self.chunks,
-                        messages=self.messages,
-                        logging_obj=self.logging_obj,
-                    )
+                # Build final response from accumulated data (v2)
+                complete_streaming_response = self.build_final_response()
 
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
