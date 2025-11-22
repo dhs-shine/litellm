@@ -67,10 +67,13 @@ self.final_finish_reason: Optional[str] = None
 
 ### 자동화된 테스트
 1. 업데이트된 `reproduce_leak.py`를 실행하여 메모리 사용량 확인:
-   - 예상: `chunks` 크기 = 0, 메모리 사용량 일정
+   ```bash
+   uv run python reproduce_leak.py
+   ```
+   - 예상: `chunk_buffer` 크기 = 100 (일정), 메모리 사용량 일정
 2. 기존 스트리밍 테스트 실행:
    ```bash
-   pytest tests/ -k stream -v
+   uv run pytest tests/ -k stream -v
    ```
 3. 로깅 출력이 원래 구현과 일치하는지 확인
 
