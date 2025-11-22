@@ -101,11 +101,14 @@ complete_streaming_response = self.build_final_response()  # 누적기 사용
 
 ### 테스트 명령어
 ```bash
+# 재현 스크립트 실행
+uv run python reproduce_leak.py
+
 # 기존 스트리밍 테스트 실행
-pytest tests/ -k stream -v
+uv run pytest tests/ -k stream -v
 
 # 회귀 테스트
-pytest tests/test_litellm/ -v
+uv run pytest tests/test_litellm/ -v
 ```
 
 ## 수정된 파일
