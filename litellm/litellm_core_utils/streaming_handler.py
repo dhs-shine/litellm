@@ -145,8 +145,10 @@ class CustomStreamWrapper:
         self.chunks: List = (
             []
         )  # keep track of the returned chunks - used for calculating the input/output tokens for stream options
+        self.chunk_buffer: List = [] # used for safety check, keeps track of last n chunks
         self.is_function_call = self.check_is_function_call(logging_obj=logging_obj)
         self.created: Optional[int] = None
+        self.usage_so_far: Usage = Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
     def __iter__(self):
         return self
@@ -198,9 +200,9 @@ class CustomStreamWrapper:
 
         Raises - InternalServerError, if LLM enters infinite loop while streaming
         """
-        if len(self.chunks) >= litellm.REPEATED_STREAMING_CHUNK_LIMIT:
+        if len(self.chunk_buffer) >= litellm.REPEATED_STREAMING_CHUNK_LIMIT:
             # Get the last n chunks
-            last_chunks = self.chunks[-litellm.REPEATED_STREAMING_CHUNK_LIMIT :]
+            last_chunks = self.chunk_buffer[-litellm.REPEATED_STREAMING_CHUNK_LIMIT :]
 
             # Extract the relevant content from the chunks
             last_contents = [chunk.choices[0].delta.content for chunk in last_chunks]
@@ -1682,7 +1684,20 @@ class CustomStreamWrapper:
                         input=self.response_uptil_now, model=self.model
                     )
                     # HANDLE STREAM OPTIONS
-                    self.chunks.append(response)
+                    if litellm.disable_streaming_logging:
+                        self.chunk_buffer.append(response)
+                        if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
+                            self.chunk_buffer.pop(0)
+                        
+                        # Incremental usage calculation
+                        if hasattr(response, "usage") and isinstance(response.usage, Usage):
+                            self.usage_so_far.prompt_tokens = response.usage.prompt_tokens
+                            self.usage_so_far.completion_tokens = response.usage.completion_tokens
+                            self.usage_so_far.total_tokens = response.usage.total_tokens
+                    else:
+                        self.chunks.append(response)
+                        self.chunk_buffer.append(response) # keep sync with chunks for safety check logic
+
                     if hasattr(
                         response, "usage"
                     ):  # remove usage from chunk, only send on final chunk
@@ -1706,18 +1721,25 @@ class CustomStreamWrapper:
                             continue
                     # add usage as hidden param
                     if self.sent_last_chunk is True and self.stream_options is None:
-                        usage = calculate_total_usage(chunks=self.chunks)
+                        if litellm.disable_streaming_logging:
+                            usage = self.usage_so_far
+                        else:
+                            usage = calculate_total_usage(chunks=self.chunks)
                         response._hidden_params["usage"] = usage
                     # RETURN RESULT
                     return response
 
         except StopIteration:
             if self.sent_last_chunk is True:
-                complete_streaming_response = litellm.stream_chunk_builder(
-                    chunks=self.chunks,
-                    messages=self.messages,
-                    logging_obj=self.logging_obj,
-                )
+                if litellm.disable_streaming_logging:
+                    # Skip full reconstruction if logging is disabled
+                    complete_streaming_response = None
+                else:
+                    complete_streaming_response = litellm.stream_chunk_builder(
+                        chunks=self.chunks,
+                        messages=self.messages,
+                        logging_obj=self.logging_obj,
+                    )
 
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
@@ -1755,7 +1777,10 @@ class CustomStreamWrapper:
                 self.sent_last_chunk = True
                 processed_chunk = self.finish_reason_handler()
                 if self.stream_options is None:  # add usage as hidden param
-                    usage = calculate_total_usage(chunks=self.chunks)
+                    if litellm.disable_streaming_logging:
+                        usage = self.usage_so_far
+                    else:
+                        usage = calculate_total_usage(chunks=self.chunks)
                     processed_chunk._hidden_params["usage"] = usage
                 ## LOGGING
                 executor.submit(
@@ -1847,7 +1872,22 @@ class CustomStreamWrapper:
                     self.rules.post_call_rules(
                         input=self.response_uptil_now, model=self.model
                     )
-                    self.chunks.append(processed_chunk)
+                    self.rules.post_call_rules(
+                        input=self.response_uptil_now, model=self.model
+                    )
+                    if litellm.disable_streaming_logging:
+                        self.chunk_buffer.append(processed_chunk)
+                        if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
+                            self.chunk_buffer.pop(0)
+                        
+                        # Incremental usage calculation
+                        if hasattr(processed_chunk, "usage") and isinstance(processed_chunk.usage, Usage):
+                            self.usage_so_far.prompt_tokens = processed_chunk.usage.prompt_tokens
+                            self.usage_so_far.completion_tokens = processed_chunk.usage.completion_tokens
+                            self.usage_so_far.total_tokens = processed_chunk.usage.total_tokens
+                    else:
+                        self.chunks.append(processed_chunk)
+                        self.chunk_buffer.append(processed_chunk)
                     if hasattr(
                         processed_chunk, "usage"
                     ):  # remove usage from chunk, only send on final chunk
@@ -1870,7 +1910,10 @@ class CustomStreamWrapper:
 
                     # add usage as hidden param
                     if self.sent_last_chunk is True and self.stream_options is None:
-                        usage = calculate_total_usage(chunks=self.chunks)
+                        if litellm.disable_streaming_logging:
+                            usage = self.usage_so_far
+                        else:
+                            usage = calculate_total_usage(chunks=self.chunks)
                         processed_chunk._hidden_params["usage"] = usage
                     
                     # Call post-call streaming deployment hook for final chunk
@@ -1910,16 +1953,32 @@ class CustomStreamWrapper:
                             input=self.response_uptil_now, model=self.model
                         )
                         # RETURN RESULT
-                        self.chunks.append(processed_chunk)
+                        # RETURN RESULT
+                        if litellm.disable_streaming_logging:
+                            self.chunk_buffer.append(processed_chunk)
+                            if len(self.chunk_buffer) > litellm.REPEATED_STREAMING_CHUNK_LIMIT:
+                                self.chunk_buffer.pop(0)
+                            
+                            # Incremental usage calculation
+                            if hasattr(processed_chunk, "usage") and isinstance(processed_chunk.usage, Usage):
+                                self.usage_so_far.prompt_tokens = processed_chunk.usage.prompt_tokens
+                                self.usage_so_far.completion_tokens = processed_chunk.usage.completion_tokens
+                                self.usage_so_far.total_tokens = processed_chunk.usage.total_tokens
+                        else:
+                            self.chunks.append(processed_chunk)
+                            self.chunk_buffer.append(processed_chunk)
                         return processed_chunk
         except (StopAsyncIteration, StopIteration):
             if self.sent_last_chunk is True:
                 # log the final chunk with accurate streaming values
-                complete_streaming_response = litellm.stream_chunk_builder(
-                    chunks=self.chunks,
-                    messages=self.messages,
-                    logging_obj=self.logging_obj,
-                )
+                if litellm.disable_streaming_logging:
+                     complete_streaming_response = None
+                else:
+                    complete_streaming_response = litellm.stream_chunk_builder(
+                        chunks=self.chunks,
+                        messages=self.messages,
+                        logging_obj=self.logging_obj,
+                    )
 
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
