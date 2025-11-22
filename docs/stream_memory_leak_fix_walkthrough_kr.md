@@ -17,6 +17,84 @@
 
 **메모리 사용량**: 스트림 길이와 무관하게 ~1KB (상수)
 
+## 아키텍처 변경
+
+### AS-IS: 전체 청크 저장 방식 (메모리 누수)
+
+```mermaid
+graph TD
+    A[스트림 시작] --> B[청크 1 수신]
+    B --> C[self.chunks.append 청크1]
+    C --> D[청크 2 수신]
+    D --> E[self.chunks.append 청크2]
+    E --> F[청크 3 수신]
+    F --> G[self.chunks.append 청크3]
+    G --> H[...]
+    H --> I[청크 5000 수신]
+    I --> J[self.chunks.append 청크5000]
+    J --> K[스트림 종료]
+    K --> L[stream_chunk_builder 호출<br/>모든 청크 5000개 처리]
+    L --> M[최종 응답 생성]
+    
+    style C fill:#ffcccc
+    style E fill:#ffcccc
+    style G fill:#ffcccc
+    style J fill:#ffcccc
+    
+    N[메모리 사용량] --> O[청크 1: ~2KB]
+    O --> P[청크 2: ~4KB]
+    P --> Q[청크 3: ~6KB]
+    Q --> R[...]
+    R --> S[청크 5000: ~10MB]
+    
+    style S fill:#ff0000,color:#fff
+```
+
+### TO-BE: 증분 누적 방식 (메모리 최적화)
+
+```mermaid
+graph TD
+    A[스트림 시작] --> B[청크 1 수신]
+    B --> C[accumulated_content += 'Hello']
+    C --> D[청크 2 수신]
+    D --> E[accumulated_content += ', how']
+    E --> F[청크 3 수신]
+    F --> G[accumulated_content += ' are you']
+    G --> H[...]
+    H --> I[청크 5000 수신]
+    I --> J[accumulated_content += '?']
+    J --> K[usage_so_far = latest_usage]
+    K --> L[스트림 종료]
+    L --> M[build_final_response 호출<br/>누적된 데이터로 응답 생성]
+    M --> N[최종 응답 생성]
+    
+    style C fill:#ccffcc
+    style E fill:#ccffcc
+    style G fill:#ccffcc
+    style J fill:#ccffcc
+    style K fill:#ccffcc
+    
+    O[메모리 사용량] --> P[청크 1: ~1KB]
+    P --> Q[청크 2: ~1KB]
+    Q --> R[청크 3: ~1KB]
+    R --> S[...]
+    S --> T[청크 5000: ~1KB]
+    
+    style T fill:#00ff00,color:#000
+```
+
+### 메모리 사용량 비교
+
+```mermaid
+graph LR
+    A[AS-IS<br/>전체 청크 저장] -->|5000 청크| B[~10MB<br/>선형 증가]
+    C[TO-BE<br/>증분 누적] -->|5000 청크| D[~1KB<br/>일정 유지]
+    
+    style B fill:#ff0000,color:#fff
+    style D fill:#00ff00,color:#000
+```
+
+
 ## 변경 사항
 
 ### 1. 증분 누적 속성 추가 ([streaming_handler.py:145-161](file:///home/dhs-shine/Workspace/LLMOps/litellm/litellm/litellm_core_utils/streaming_handler.py#L145-L161))
