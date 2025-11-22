@@ -169,6 +169,28 @@ complete_streaming_response = self.build_final_response()  # 누적기 사용
 - ✅ Public API 변경 없음
 - ✅ 로깅 데이터 형식 변경 없음
 
+### 메모리 라이프사이클
+`CustomStreamWrapper`는 **이터레이터 객체**이므로 스트림 완료 시 자동으로 메모리가 정리됩니다:
+
+```python
+# 스트림 시작
+async for chunk in litellm.acompletion(..., stream=True):
+    # CustomStreamWrapper 객체 생성 및 데이터 누적
+    # self.accumulated_content += chunk.content
+    # self.usage_so_far = chunk.usage
+    print(chunk)
+
+# 스트림 종료 (StopAsyncIteration 발생)
+# → CustomStreamWrapper 객체에 대한 참조가 사라짐
+# → Python GC가 자동으로 메모리 회수
+# → accumulated_content, usage_so_far 등 모두 정리됨
+```
+
+**핵심 차이점**:
+- **AS-IS**: `self.chunks` 리스트가 로깅 객체에 의해 참조될 수 있어 메모리 누수 가능
+- **TO-BE**: 최종 응답만 로깅 객체에 전달되므로 누적기는 즉시 정리됨
+
+
 ## 검증
 
 ### 예상 동작
