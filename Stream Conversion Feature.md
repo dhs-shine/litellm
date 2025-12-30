@@ -474,3 +474,48 @@ BaseLLMHTTPHandler.completion() (llm_http_handler.py) ← 여기!
 - Proxy 서버에서도 사용됨
 
 따라서 [buffered_stream](cci:1://file:///home/dhs-shine/Workspace/LLMOps/litellm/litellm/llms/custom_httpx/llm_http_handler.py:905:4-978:29) 기능은 Proxy에서도 동일하게 작동합니다. 👍
+
+### User Input
+
+그럼 좀 더 나아가서, config.yaml의 특정 모델에 buffered_stream을 true로 설정하면 사용자가 extra_body로 넣지 않아도 동작하는 기능을 구현하려면 어떻게 해야할까? 내가 원하는건 사용자 설정을 통해 동작을 바꾸는게 아니라 proxy server 설정을 통해 동작을 바꾸는거거든
+
+### Planner Response
+
+좋은 질문입니다! config.yaml의 모델별 설정으로 [buffered_stream](cci:1://file:///home/dhs-shine/Workspace/LLMOps/litellm/litellm/llms/custom_httpx/llm_http_handler.py:905:4-978:29)을 활성화하려면 어떻게 해야 하는지 살펴보겠습니다.
+
+*Grep searched codebase*
+
+*Searched filesystem*
+
+*Viewed [simple_config.yaml](file:///home/dhs-shine/Workspace/LLMOps/litellm/litellm/proxy/example_config_yaml/simple_config.yaml) *
+
+*Grep searched codebase*
+
+### Planner Response
+
+[fake_stream](cci:1://file:///home/dhs-shine/Workspace/LLMOps/litellm/litellm/llms/base_llm/chat/transformation.py:145:4-154:20)이 config에서 어떻게 처리되는지 살펴보겠습니다. `litellm_params`로 전달되는 것 같습니다.
+
+*Grep searched codebase*
+
+### Planner Response
+
+`litellm_params`가 config에서 deployment로 전달되는 과정을 확인했습니다. 이제 사용자의 요구사항을 정리해서 구현 계획을 세우겠습니다.
+
+*Viewed [router.py](file:///home/dhs-shine/Workspace/LLMOps/litellm/litellm/router.py) *
+
+### Planner Response
+
+코드 분석 결과, 라인 1529와 1539-1544를 보면:
+
+```python
+data = deployment["litellm_params"]  # config.yaml의 litellm_params
+...
+input_kwargs = {
+    **data,  # litellm_params 펼침
+    "messages": messages,
+    ...
+    **kwargs,  # 사용자 요청 파라미터
+}
+```
+
+**좋은 소식!** 이미 구현한 코드가 config.yaml에서도 작동합니다. 설정만 추가하면 됩니다!
