@@ -6,6 +6,7 @@ Note: _This is purely the output of the chat conversation and does not contain a
 
 litellm에서 사용자가 stream=false 요청을 보낸 경우, 실제 백엔드의 추론 서버에 stream=true 요청으로 바꿔서 전달하고 그다음 전체 응답을 조립해서 stream=false의 응답형태로 변경하는 기능이 있을까?
 
+
 이걸 물어보는 이유는 백엔드 추론 서버의 성능이 부족해서 stream=false로 호출하면 타임아웃 나는 경우가 잦은데, 사용자들은 rest api 형태로 사용하고 싶어해서 어떻게 하는 것이 효과적일지 고민하다가 찾아낸 방법인데 litellm이 이런 기능도 지원이 되는지 궁금해
 
 ### Planner Response
@@ -519,3 +520,23 @@ input_kwargs = {
 ```
 
 **좋은 소식!** 이미 구현한 코드가 config.yaml에서도 작동합니다. 설정만 추가하면 됩니다!
+
+추가 구현 없이 config.yaml에서 바로 사용 가능합니다:
+
+```
+yaml
+model_list:
+  - model_name: slow-backend-model
+    litellm_params:
+      model: openai/your-model
+      api_base: http://slow-backend:8000
+      buffered_stream: true  # 여기에 추가!
+```
+
+동작 원리:
+
+- Router가 config.yaml의 litellm_params를 읽음
+- _acompletion()에서 data = deployment["litellm_params"]로 가져옴
+- input_kwargs = {**data, ...}로 펼쳐서 litellm.acompletion()에 전달
+- llm_http_handler.completion()에서 optional_params.pop("buffered_stream")로 추출
+- 사용자가 extra_body로 넘기지 않아도, 서버 설정만으로 특정 모델에 대해 buffered_stream이 자동 적용됩니다!
