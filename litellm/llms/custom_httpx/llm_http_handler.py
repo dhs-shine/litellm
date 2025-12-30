@@ -327,6 +327,7 @@ class BaseLLMHTTPHandler:
         acompletion: bool,
         stream: Optional[bool] = False,
         fake_stream: bool = False,
+        buffered_stream: bool = False,
         api_key: Optional[str] = None,
         headers: Optional[Dict[str, Any]] = None,
         client: Optional[Union[HTTPHandler, AsyncHTTPHandler]] = None,
@@ -354,6 +355,9 @@ class BaseLLMHTTPHandler:
                 model=model, custom_llm_provider=custom_llm_provider, stream=stream
             )
         )
+
+        # Handle buffered_stream from optional_params
+        buffered_stream = buffered_stream or optional_params.pop("buffered_stream", False)
 
         # get config from model, custom llm provider
         headers = provider_config.validate_environment(
@@ -438,6 +442,31 @@ class BaseLLMHTTPHandler:
                 )
 
             else:
+                # Handle buffered_stream: convert non-stream to internal streaming
+                if buffered_stream:
+                    return self._async_buffered_stream_completion(
+                        custom_llm_provider=custom_llm_provider,
+                        provider_config=provider_config,
+                        api_base=api_base,
+                        headers=headers,
+                        data=data,
+                        timeout=timeout,
+                        model=model,
+                        model_response=model_response,
+                        logging_obj=logging_obj,
+                        api_key=api_key,
+                        messages=messages,
+                        optional_params=optional_params,
+                        litellm_params=litellm_params,
+                        encoding=encoding,
+                        client=(
+                            client
+                            if client is not None and isinstance(client, AsyncHTTPHandler)
+                            else None
+                        ),
+                        json_mode=json_mode,
+                        signed_json_body=signed_json_body,
+                    )
                 return self.async_completion(
                     custom_llm_provider=custom_llm_provider,
                     provider_config=provider_config,
@@ -508,6 +537,32 @@ class BaseLLMHTTPHandler:
                 model=model,
                 custom_llm_provider=custom_llm_provider,
                 logging_obj=logging_obj,
+            )
+
+        # Handle buffered_stream for sync: convert non-stream to internal streaming
+        if buffered_stream:
+            return self._sync_buffered_stream_completion(
+                custom_llm_provider=custom_llm_provider,
+                provider_config=provider_config,
+                api_base=api_base,
+                headers=headers,
+                data=data,
+                timeout=timeout,
+                model=model,
+                model_response=model_response,
+                logging_obj=logging_obj,
+                api_key=api_key,
+                messages=messages,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                encoding=encoding,
+                client=(
+                    client
+                    if client is not None and isinstance(client, HTTPHandler)
+                    else None
+                ),
+                json_mode=json_mode,
+                signed_json_body=signed_json_body,
             )
 
         if client is None or not isinstance(client, HTTPHandler):
@@ -772,6 +827,157 @@ class BaseLLMHTTPHandler:
         if provider_config.supports_stream_param_in_request_body is True:
             data["stream"] = True
         return data
+
+    async def _async_buffered_stream_completion(
+        self,
+        custom_llm_provider: str,
+        provider_config: BaseConfig,
+        api_base: str,
+        headers: dict,
+        data: dict,
+        timeout: Union[float, httpx.Timeout],
+        model: str,
+        model_response: ModelResponse,
+        logging_obj: LiteLLMLoggingObj,
+        messages: list,
+        optional_params: dict,
+        litellm_params: dict,
+        encoding: Any,
+        api_key: Optional[str] = None,
+        client: Optional[AsyncHTTPHandler] = None,
+        json_mode: bool = False,
+        signed_json_body: Optional[bytes] = None,
+    ) -> ModelResponse:
+        """
+        Buffered stream completion: performs streaming internally and assembles
+        chunks into a complete ModelResponse.
+
+        This helps avoid timeouts when backend inference servers are slow,
+        as streaming requests receive chunks incrementally.
+        """
+        from litellm.main import stream_chunk_builder
+
+        # Add stream=True to request body
+        stream_data = self._add_stream_param_to_request_body(
+            data=data.copy(),
+            provider_config=provider_config,
+            fake_stream=False,
+        )
+
+        # Get streaming response
+        completion_stream, _response_headers = await self.make_async_call_stream_helper(
+            model=model,
+            custom_llm_provider=custom_llm_provider,
+            provider_config=provider_config,
+            api_base=api_base,
+            headers=headers,
+            data=stream_data,
+            messages=messages,
+            logging_obj=logging_obj,
+            timeout=timeout,
+            fake_stream=False,
+            client=client,
+            litellm_params=litellm_params,
+            optional_params=optional_params,
+            json_mode=json_mode,
+            signed_json_body=signed_json_body,
+        )
+
+        # Collect all chunks
+        chunks = []
+        async for chunk in completion_stream:
+            chunks.append(chunk)
+
+        # Assemble chunks into complete response
+        if not chunks:
+            return model_response
+
+        complete_response = stream_chunk_builder(
+            chunks=chunks,
+            messages=messages,
+            logging_obj=logging_obj,
+        )
+
+        if complete_response is not None:
+            return cast(ModelResponse, complete_response)
+
+        return model_response
+
+    def _sync_buffered_stream_completion(
+        self,
+        custom_llm_provider: str,
+        provider_config: BaseConfig,
+        api_base: str,
+        headers: dict,
+        data: dict,
+        timeout: Union[float, httpx.Timeout],
+        model: str,
+        model_response: ModelResponse,
+        logging_obj: LiteLLMLoggingObj,
+        messages: list,
+        optional_params: dict,
+        litellm_params: dict,
+        encoding: Any,
+        api_key: Optional[str] = None,
+        client: Optional[HTTPHandler] = None,
+        json_mode: bool = False,
+        signed_json_body: Optional[bytes] = None,
+    ) -> ModelResponse:
+        """
+        Buffered stream completion (sync): performs streaming internally and assembles
+        chunks into a complete ModelResponse.
+
+        This helps avoid timeouts when backend inference servers are slow,
+        as streaming requests receive chunks incrementally.
+        """
+        from litellm.main import stream_chunk_builder
+
+        # Add stream=True to request body
+        stream_data = self._add_stream_param_to_request_body(
+            data=data.copy(),
+            provider_config=provider_config,
+            fake_stream=False,
+        )
+
+        # Get streaming response
+        completion_stream, _response_headers = self.make_sync_call(
+            provider_config=provider_config,
+            api_base=api_base,
+            headers=headers,
+            data=stream_data,
+            signed_json_body=signed_json_body,
+            original_data=data,
+            model=model,
+            messages=messages,
+            logging_obj=logging_obj,
+            timeout=timeout,
+            fake_stream=False,
+            client=client,
+            litellm_params=litellm_params,
+            json_mode=json_mode,
+            optional_params=optional_params,
+        )
+
+        # Collect all chunks
+        chunks = []
+        for chunk in completion_stream:
+            chunks.append(chunk)
+
+        # Assemble chunks into complete response
+        if not chunks:
+            return model_response
+
+        complete_response = stream_chunk_builder(
+            chunks=chunks,
+            messages=messages,
+            logging_obj=logging_obj,
+        )
+
+        if complete_response is not None:
+            return cast(ModelResponse, complete_response)
+
+        return model_response
+
 
     def embedding(
         self,
