@@ -2,19 +2,25 @@
 # Simple Makefile for running tests and basic development tasks
 
 .PHONY: help test test-unit test-integration test-unit-helm lint format install-dev install-proxy-dev install-test-deps install-helm-unittest check-circular-imports check-import-safety
+.PHONY: install-dev-uv install-proxy-dev-uv install-test-deps-uv format-uv format-check-uv lint-uv lint-ruff-uv lint-mypy-uv lint-black-uv check-circular-imports-uv check-import-safety-uv test-uv test-unit-uv test-integration-uv
+.PHONY: sync-deps sync-deps-check sync-deps-dry-run
+
+# Virtual environment activation helper
+VENV_ACTIVATE = . .venv/bin/activate &&
 
 # Default target
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "=== Poetry-based (original) ==="
 	@echo "  make install-dev        - Install development dependencies"
 	@echo "  make install-proxy-dev  - Install proxy development dependencies"
 	@echo "  make install-dev-ci     - Install dev dependencies (CI-compatible, pins OpenAI)"
 	@echo "  make install-proxy-dev-ci - Install proxy dev dependencies (CI-compatible)"
 	@echo "  make install-test-deps  - Install test dependencies"
-	@echo "  make install-helm-unittest - Install helm unittest plugin"
 	@echo "  make format             - Apply Black code formatting"
 	@echo "  make format-check       - Check Black code formatting (matches CI)"
-	@echo "  make lint               - Run all linting (Ruff, MyPy, Black check, circular imports, import safety)"
+	@echo "  make lint               - Run all linting"
 	@echo "  make lint-ruff          - Run Ruff linting only"
 	@echo "  make lint-mypy          - Run MyPy type checking only"
 	@echo "  make lint-black         - Check Black formatting (matches CI)"
@@ -23,6 +29,24 @@ help:
 	@echo "  make test               - Run all tests"
 	@echo "  make test-unit          - Run unit tests (tests/test_litellm)"
 	@echo "  make test-integration   - Run integration tests"
+	@echo ""
+	@echo "=== UV-based (PEP-621) ==="
+	@echo "  make install-dev-uv     - Install dev dependencies with uv"
+	@echo "  make install-proxy-dev-uv - Install proxy dev dependencies with uv"
+	@echo "  make install-test-deps-uv - Install test dependencies with uv"
+	@echo "  make format-uv          - Apply Black code formatting (uv)"
+	@echo "  make format-check-uv    - Check Black code formatting (uv)"
+	@echo "  make lint-uv            - Run all linting (uv)"
+	@echo "  make lint-ruff-uv       - Run Ruff linting only (uv)"
+	@echo "  make lint-mypy-uv       - Run MyPy type checking only (uv)"
+	@echo "  make check-circular-imports-uv - Check for circular imports (uv)"
+	@echo "  make check-import-safety-uv - Check import safety (uv)"
+	@echo "  make test-uv            - Run all tests (uv)"
+	@echo "  make test-unit-uv       - Run unit tests (uv)"
+	@echo "  make test-integration-uv - Run integration tests (uv)"
+	@echo ""
+	@echo "=== Other ==="
+	@echo "  make install-helm-unittest - Install helm unittest plugin"
 	@echo "  make test-unit-helm     - Run helm unit tests"
 
 # Installation targets
@@ -102,3 +126,71 @@ test-llm-translation-single: install-test-deps
 	poetry run pytest tests/llm_translation/$(FILE) \
 		--junitxml=test-results/junit.xml \
 		-v --tb=short --maxfail=100 --timeout=300
+
+# ============================================================
+# UV-based targets (PEP-621 compatible)
+# ============================================================
+
+# Installation targets (uv)
+install-dev-uv:
+	uv venv --python 3.12 || true
+	uv pip install -e ".[dev]"
+
+install-proxy-dev-uv:
+	uv venv --python 3.12 || true
+	uv pip install -e ".[proxy,dev,proxy-dev]"
+
+install-test-deps-uv: install-proxy-dev-uv
+	uv pip install "pytest-retry==1.6.3" pytest-xdist openapi-core
+	cd enterprise && uv pip install -e . && cd ..
+
+# Formatting (uv)
+format-uv:
+	$(VENV_ACTIVATE) cd litellm && black . && cd ..
+
+format-check-uv:
+	$(VENV_ACTIVATE) cd litellm && black --check . && cd ..
+
+# Linting targets (uv)
+lint-ruff-uv:
+	$(VENV_ACTIVATE) cd litellm && ruff check . && cd ..
+
+lint-mypy-uv:
+	$(VENV_ACTIVATE) cd litellm && mypy . --ignore-missing-imports && cd ..
+
+lint-black-uv: format-check-uv
+
+check-circular-imports-uv:
+	$(VENV_ACTIVATE) cd litellm && python ../tests/documentation_tests/test_circular_imports.py && cd ..
+
+check-import-safety-uv:
+	$(VENV_ACTIVATE) python -c "from litellm import *" || (echo '🚨 import failed, this means you introduced unprotected imports! 🚨'; exit 1)
+
+# Combined linting (uv)
+lint-uv: format-check-uv lint-ruff-uv lint-mypy-uv check-circular-imports-uv check-import-safety-uv
+
+# Testing targets (uv)
+test-uv:
+	$(VENV_ACTIVATE) pytest tests/
+
+test-unit-uv: install-test-deps-uv
+	$(VENV_ACTIVATE) pytest tests/test_litellm -x -vv -n 4
+
+test-integration-uv:
+	$(VENV_ACTIVATE) pytest tests/ -k "not test_litellm"
+
+# ============================================================
+# Dependency sync targets (Poetry -> PEP-621)
+# ============================================================
+
+sync-deps:
+	@echo "Syncing Poetry dependencies to PEP-621 format..."
+	$(VENV_ACTIVATE) python scripts/sync_poetry_to_pep621.py
+
+sync-deps-check:
+	@echo "Checking if dependencies are in sync..."
+	$(VENV_ACTIVATE) python scripts/sync_poetry_to_pep621.py --check
+
+sync-deps-dry-run:
+	@echo "Preview sync changes (dry-run)..."
+	$(VENV_ACTIVATE) python scripts/sync_poetry_to_pep621.py --dry-run
