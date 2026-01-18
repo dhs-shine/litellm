@@ -50,3 +50,42 @@ poetry install --with dev,proxy-dev
 
 ### 영향받는 파일
 - `pyproject.toml`
+
+---
+
+## 2026-01-18: Makefile에 UV 기반 타겟 추가
+
+### 변경 목적
+- `poetry` 없이 `uv`만으로도 개발 작업 가능하도록 Makefile 확장
+- 기존 Poetry 기반 타겟은 그대로 유지 (하이브리드 방식)
+
+### 추가된 타겟
+
+| 타겟 | 설명 |
+|------|------|
+| `install-dev-uv` | uv로 개발 의존성 설치 |
+| `install-proxy-dev-uv` | uv로 proxy 개발 의존성 설치 |
+| `install-test-deps-uv` | uv로 테스트 의존성 설치 |
+| `format-uv` | Black 포맷팅 적용 (uv) |
+| `format-check-uv` | Black 포맷팅 검사 (uv) |
+| `lint-uv` | 전체 린팅 (uv) |
+| `lint-ruff-uv` | Ruff 린트 (uv) |
+| `lint-mypy-uv` | MyPy 타입 체크 (uv) |
+| `check-circular-imports-uv` | 순환 import 검사 (uv) |
+| `check-import-safety-uv` | import 안전성 검사 (uv) |
+| `test-uv` | 전체 테스트 (uv) |
+| `test-unit-uv` | 단위 테스트 (uv) |
+| `test-integration-uv` | 통합 테스트 (uv) |
+
+### 사용법
+
+```bash
+# uv 설치 후
+make install-dev-uv       # 개발 환경 설정
+make lint-uv              # 린팅
+make test-unit-uv         # 단위 테스트
+```
+
+### 영향받는 파일
+- `Makefile`
+
