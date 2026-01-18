@@ -89,3 +89,31 @@ make test-unit-uv         # 단위 테스트
 ### 영향받는 파일
 - `Makefile`
 
+---
+
+## 2026-01-18: pytest-xdist 병렬 테스트 충돌 해결
+
+### 변경 목적
+- `pytest -n 4` 병렬 테스트 시 동일한 파일명(`test_handler.py`)으로 인한 import 충돌 해결
+- `import file mismatch` 에러 방지
+
+### 원인
+pytest-xdist가 병렬 실행할 때 동일한 이름의 테스트 파일이 여러 디렉토리에 있으면 모듈 충돌 발생
+
+### 해결 방법
+충돌하는 `test_handler.py` 파일이 있는 디렉토리에 `__init__.py` 추가
+
+### 추가된 파일
+```
+tests/test_litellm/integrations/__init__.py
+tests/test_litellm/integrations/websearch_interception/__init__.py
+tests/test_litellm/llms/huggingface/embedding/__init__.py
+tests/test_litellm/llms/openai/chat/guardrail_translation/__init__.py
+```
+
+### 검증 결과
+```
+168 passed, 5 skipped in 56.27s
+```
+
+

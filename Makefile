@@ -140,8 +140,8 @@ install-proxy-dev-uv:
 	uv pip install -e ".[proxy,dev,proxy-dev]"
 
 install-test-deps-uv: install-proxy-dev-uv
-	$(VENV_ACTIVATE) pip install "pytest-retry==1.6.3" pytest-xdist openapi-core
-	cd enterprise && $(VENV_ACTIVATE) pip install -e . && cd ..
+	uv pip install "pytest-retry==1.6.3" pytest-xdist openapi-core
+	cd enterprise && uv pip install -e . && cd ..
 
 # Formatting (uv)
 format-uv:
