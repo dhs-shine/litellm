@@ -86,7 +86,7 @@ mlflow = ["mlflow>3.1.4; python_version >= '3.10'"]
 dev = [
     "flake8>=6.1.0,<7.0.0",
     "black>=23.12.0,<24.0.0",
-    "mypy>=1.0",
+    "mypy>=1.0,<2.0.0",
     "pytest>=7.4.3,<8.0.0",
     "pytest-mock>=3.12.0,<4.0.0",
     "pytest-asyncio>=0.21.1,<0.22.0",

@@ -258,6 +258,7 @@ git diff upstream/main -- pyproject.toml
    make test-unit-uv  # 머지 후 테스트 실행
    ```
 
+
 ### 장기적 권장사항
 
 | 권장 | 설명 |
@@ -265,4 +266,75 @@ git diff upstream/main -- pyproject.toml
 | PEP-621 Upstream 제안 | LiteLLM 메인 저장소에 PEP-621 지원 PR 제출 고려 |
 | 버전 동기화 자동화 | CI에서 버전 충돌 자동 해결 스크립트 추가 |
 | 변경 최소화 | 기존 Poetry 섹션 수정은 피하고 추가만 함 |
+
+---
+
+## 2026-01-18: Poetry → PEP-621 동기화 스크립트 추가
+
+### 변경 목적
+- Upstream 머지 후 Poetry 의존성을 PEP-621 형식으로 자동 동기화
+- 수동 동기화 작업 제거
+
+### 추가된 파일
+- `scripts/sync_poetry_to_pep621.py`
+
+### 동기화 대상
+
+| Poetry 소스 | PEP-621 타겟 |
+|------------|-------------|
+| `[tool.poetry]` version | `[project]` version |
+| `[tool.poetry.dependencies]` | `[project.dependencies]` |
+| `[tool.poetry.group.dev.dependencies]` | `[project.optional-dependencies].dev` |
+| `[tool.poetry.group.proxy-dev.dependencies]` | `[project.optional-dependencies].proxy-dev` |
+| `[tool.poetry.extras].proxy` | `[project.optional-dependencies].proxy` |
+| `[tool.poetry.extras].extra_proxy` | `[project.optional-dependencies].extra_proxy` |
+| `[tool.poetry.extras].utils` | `[project.optional-dependencies].utils` |
+| `[tool.poetry.extras].caching` | `[project.optional-dependencies].caching` |
+| `[tool.poetry.extras].semantic-router` | `[project.optional-dependencies].semantic-router` |
+| `[tool.poetry.extras].mlflow` | `[project.optional-dependencies].mlflow` |
+
+### 버전 변환 규칙
+
+| Poetry 형식 | PEP-517 결과 | 설명 |
+|------------|-------------|------|
+| `^1.2.3` | `>=1.2.3,<2.0.0` | Caret (major 변경 금지) |
+| `^0.2.3` | `>=0.2.3,<0.3.0` | Caret (0.x는 minor 변경 금지) |
+| `~1.2.3` | `>=1.2.3,<1.3.0` | Tilde (minor 변경 금지) |
+| `1.2.3` | `==1.2.3` | Bare version |
+| `*` | (제약 없음) | Any version |
+| `>=1.0,<2.0` | `>=1.0,<2.0` | 이미 PEP-517 형식 |
+
+### 환경 마커 변환
+
+| Poetry 형식 | PEP-517 결과 |
+|------------|-------------|
+| `python = ">=3.9"` | `; python_version >= '3.9'` |
+| `python = ">=3.9,<3.14"` | `; python_version >= '3.9' and python_version < '3.14'` |
+| `markers = "sys_platform != 'win32'"` | `; sys_platform != 'win32'` |
+
+### 기능
+
+| 기능 | 설명 |
+|------|------|
+| 버전 변환 | Poetry 버전 표기법을 PEP-517 형식으로 자동 변환 |
+| 마커 변환 | python/markers 조건을 PEP-517 환경 마커로 변환 |
+| 포맷 유지 | 큰따옴표(`"`) 스타일 유지 |
+| `--dry-run` | 변경 미리보기 (파일 수정 안 함) |
+| `--check` | 동기화 상태 확인 (CI용, 불일치 시 exit 1) |
+
+### Makefile 타겟
+
+```bash
+make sync-deps          # 동기화 실행
+make sync-deps-check    # 동기화 상태 확인 (CI용)
+make sync-deps-dry-run  # 변경 미리보기
+```
+
+### 사용법 (Upstream 머지 후)
+
+```bash
+git merge upstream/main
+make sync-deps           # Poetry → PEP-621 동기화
+make test-unit-uv        # 테스트 실행
+```
 

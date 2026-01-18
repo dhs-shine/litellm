@@ -3,6 +3,7 @@
 
 .PHONY: help test test-unit test-integration test-unit-helm lint format install-dev install-proxy-dev install-test-deps install-helm-unittest check-circular-imports check-import-safety
 .PHONY: install-dev-uv install-proxy-dev-uv install-test-deps-uv format-uv format-check-uv lint-uv lint-ruff-uv lint-mypy-uv lint-black-uv check-circular-imports-uv check-import-safety-uv test-uv test-unit-uv test-integration-uv
+.PHONY: sync-deps sync-deps-check sync-deps-dry-run
 
 # Virtual environment activation helper
 VENV_ACTIVATE = . .venv/bin/activate &&
@@ -178,3 +179,18 @@ test-unit-uv: install-test-deps-uv
 test-integration-uv:
 	$(VENV_ACTIVATE) pytest tests/ -k "not test_litellm"
 
+# ============================================================
+# Dependency sync targets (Poetry -> PEP-621)
+# ============================================================
+
+sync-deps:
+	@echo "Syncing Poetry dependencies to PEP-621 format..."
+	$(VENV_ACTIVATE) python scripts/sync_poetry_to_pep621.py
+
+sync-deps-check:
+	@echo "Checking if dependencies are in sync..."
+	$(VENV_ACTIVATE) python scripts/sync_poetry_to_pep621.py --check
+
+sync-deps-dry-run:
+	@echo "Preview sync changes (dry-run)..."
+	$(VENV_ACTIVATE) python scripts/sync_poetry_to_pep621.py --dry-run
