@@ -116,4 +116,69 @@ tests/test_litellm/llms/openai/chat/guardrail_translation/__init__.py
 168 passed, 5 skipped in 56.27s
 ```
 
+---
+
+## 2026-01-18: 코드 품질 도구 분석 (Black, Ruff, MyPy, Lint)
+
+### 개요
+
+LiteLLM 프로젝트에서 사용하는 코드 품질 도구들의 목적과 차이점을 정리합니다.
+
+### 도구별 목적
+
+| 도구 | 분류 | 주요 역할 | 자동 수정 |
+|------|------|-----------|-----------|
+| **Black** | Formatter | 코드 스타일 통일 | ✅ |
+| **Ruff** | Linter | 코드 품질/버그 탐지 | ⚠️ 일부 |
+| **MyPy** | Type Checker | 타입 오류 검출 | ❌ |
+| **Lint** | 개념/프로세스 | 품질 검사 전반 | - |
+
+### 도구 상세
+
+#### Black (코드 포매터)
+- Python 코드의 형식을 자동으로 정리하는 **opinionated formatter**
+- 들여쓰기, 줄 바꿈, 따옴표 스타일, 공백 등을 통일된 규칙으로 변환
+- "하나의 올바른 방법"을 강제하여 스타일 논쟁을 없앰
+
+#### Ruff (린터)
+- Rust로 작성된 초고속 Python 린터
+- Flake8, isort, pyupgrade 등의 규칙을 통합
+- 미사용 import, 정의되지 않은 변수, 코드 복잡도 등 검사
+- 최신 버전은 포매팅 기능도 지원 (Black 대체 가능)
+
+#### MyPy (타입 체커)
+- Python 타입 힌트를 분석하여 타입 불일치 검출
+- 함수 인자, 반환값, 변수의 타입 일관성 확인
+- 런타임이 아닌 **정적 분석** 단계에서 오류를 잡아냄
+
+### LiteLLM 프로젝트 설정
+
+#### 현재 전략: 역할 분리
+```toml
+# pyproject.toml
+black = "^23.12.0"   # 포매팅 전용
+ruff = "^0.1.0"      # 린팅 전용
+
+[tool.isort]
+profile = "black"    # isort를 Black과 호환되게 설정
+```
+
+#### Makefile 명령어
+```bash
+make format      # Black 포매팅 적용
+make lint        # 전체 린트 (Ruff + MyPy + Black check)
+make lint-ruff   # Ruff만 실행
+make lint-mypy   # MyPy만 실행
+```
+
+### Black과 Ruff 충돌 방지
+
+현재 프로젝트는 **역할 분리 방식**을 채택:
+- Ruff: 린팅 용도 (`ruff check`)
+- Black: 포매팅 용도 (`black .`)
+
+이 방식으로 두 도구 간 충돌을 방지하고 있음.
+
+> **향후 고려사항**: Ruff v0.1+ 이후 `ruff format` 지원으로 Black을 완전히 대체 가능. 
+> 프로젝트 통일성을 위해 Ruff 단일 도구로 전환 검토 가능.
 
