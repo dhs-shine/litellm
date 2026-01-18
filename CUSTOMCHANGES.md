@@ -182,3 +182,87 @@ make lint-mypy   # MyPy만 실행
 > **향후 고려사항**: Ruff v0.1+ 이후 `ruff format` 지원으로 Black을 완전히 대체 가능. 
 > 프로젝트 통일성을 위해 Ruff 단일 도구로 전환 검토 가능.
 
+---
+
+## 2026-01-18: Upstream 머지 충돌 위험 분석
+
+### 개요
+
+`pep-621` 브랜치에서 main 대비 변경한 파일들이 upstream 릴리즈 반영 시 충돌 가능성을 분석합니다.
+
+### 변경된 파일 목록
+
+| 파일 | 변경 유형 | 설명 |
+|------|----------|------|
+| `pyproject.toml` | 수정 | PEP-621 섹션 추가 |
+| `Makefile` | 수정 | UV 기반 타겟 추가 |
+| `CUSTOMCHANGES.md` | 신규 | 변경 이력 문서 |
+| `tests/*/__init__.py` (4개) | 신규 | pytest-xdist 병렬 테스트용 |
+
+### 충돌 위험도 분석
+
+#### 🔴 고위험: `pyproject.toml`
+
+- **Upstream 변경 빈도**: 3개월간 **83회** 변경
+- **충돌 원인**:
+  - 버전 업데이트 (`version = "X.X.X"`)
+  - 새로운 의존성 추가/업데이트
+  - optional-dependencies 변경
+- **영향 범위**: 파일 상단(`[project]`)과 중간(`[project.optional-dependencies]`) 모두 영향
+
+**권장 대응**:
+```bash
+# 머지 전 upstream 변경사항 확인
+git diff upstream/main -- pyproject.toml
+
+# 충돌 발생 시 전략
+# 1. [project] 섹션의 version → upstream 값 사용
+# 2. dependencies/optional-dependencies → upstream 값 우선, 커스텀 추가분 확인
+# 3. [tool.poetry.*] 섹션 → Poetry 설정은 upstream 따름
+```
+
+#### 🟢 저위험: `Makefile`
+
+- **Upstream 변경 빈도**: 3개월간 **4회** 변경
+- **충돌 가능성**: 낮음 (새로운 타겟만 추가, 기존 타겟 미수정)
+- **이유**: UV 기반 타겟은 파일 끝에 추가되어 기존 타겟과 분리됨
+
+**권장 대응**: 대부분 자동 머지 가능. 충돌 시 양쪽 변경 모두 보존.
+
+#### 🟢 저위험: `tests/*/__init__.py` 파일들
+
+- **충돌 가능성**: 거의 없음
+- **이유**: 빈 `__init__.py` 파일, upstream에서 동일 파일 추가 가능성 낮음
+
+#### ⚪ 무위험: `CUSTOMCHANGES.md`
+
+- **충돌 가능성**: 없음
+- **이유**: 커스텀 전용 파일, upstream에 존재하지 않음
+
+### 권장 머지 전략
+
+1. **자동화 스크립트 고려**:
+   ```bash
+   # pyproject.toml 버전 자동 동기화 예시
+   UPSTREAM_VERSION=$(grep '^version = ' upstream_pyproject.toml | head -1)
+   sed -i "s/^version = .*/version = ${UPSTREAM_VERSION}/" pyproject.toml
+   ```
+
+2. **머지 순서**:
+   1. `CUSTOMCHANGES.md` 제외하고 머지
+   2. `pyproject.toml` 충돌 해결 (가장 복잡)
+   3. 나머지 파일 자동 머지
+
+3. **테스트 확인**:
+   ```bash
+   make test-unit-uv  # 머지 후 테스트 실행
+   ```
+
+### 장기적 권장사항
+
+| 권장 | 설명 |
+|------|------|
+| PEP-621 Upstream 제안 | LiteLLM 메인 저장소에 PEP-621 지원 PR 제출 고려 |
+| 버전 동기화 자동화 | CI에서 버전 충돌 자동 해결 스크립트 추가 |
+| 변경 최소화 | 기존 Poetry 섹션 수정은 피하고 추가만 함 |
+
