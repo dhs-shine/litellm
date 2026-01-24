@@ -6139,6 +6139,220 @@ async def realtime_websocket_endpoint(
         await websocket.close(code=1011, reason="Internal server error")
 
 
+@router.post(
+    "/v1/realtime",
+    dependencies=[Depends(user_api_key_auth)],
+    tags=["realtime"],
+    include_in_schema=False,
+)
+@router.post(
+    "/realtime",
+    dependencies=[Depends(user_api_key_auth)],
+    tags=["realtime"],
+    include_in_schema=False,
+)
+async def realtime_http_endpoint(
+    request: Request,
+    fastapi_response: Response,
+    model: str,
+    intent: str = fastapi.Query(
+        None, description="The intent of the realtime connection."
+    ),
+    user_api_key_dict: UserAPIKeyAuth = Depends(user_api_key_auth),
+):
+    """
+    HTTP endpoint for OpenAI Realtime API. This endpoint accepts HTTP requests and converts them to WebSocket connections
+    for compatibility with the existing WebSocket-based realtime implementation.
+    
+    This is useful for:
+    - Testing realtime functionality with HTTP clients
+    - Development and debugging
+    - Clients that cannot establish WebSocket connections
+    
+    The endpoint will:
+    1. Accept the HTTP request with model and intent parameters
+    2. Create a virtual WebSocket connection
+    3. Route the request to the appropriate LLM provider
+    4. Stream responses back as Server-Sent Events (SSE)
+    """
+    global proxy_logging_obj
+    data: Dict = {}
+    try:
+        # Use orjson to parse JSON data, orjson speeds up requests significantly
+        body = await request.body()
+        data = orjson.loads(body) if body else {}
+
+        # Include original request and headers in the data
+        data = await add_litellm_data_to_request(
+            data=data,
+            request=request,
+            general_settings=general_settings,
+            user_api_key_dict=user_api_key_dict,
+            version=version,
+            proxy_config=proxy_config,
+        )
+
+        # Set the model from the path parameter
+        data["model"] = model
+        
+        # Add intent if provided
+        if intent is not None:
+            data["intent"] = intent
+
+        if data.get("user", None) is None and user_api_key_dict.user_id is not None:
+            data["user"] = user_api_key_dict.user_id
+
+        ### CALL HOOKS ### - modify incoming data / reject request before calling the model
+        data = await proxy_logging_obj.pre_call_hook(
+            user_api_key_dict=user_api_key_dict, data=data, call_type="realtime"
+        )
+
+        # Create a mock WebSocket-like object for the HTTP request
+        class MockWebSocket:
+            def __init__(self, request: Request):
+                self.request = request
+                self.scope = request.scope.copy()
+                self.scope["type"] = "websocket"
+                self.scope["subprotocols"] = []
+                self.accepted_subprotocol = None
+                self.client_state = "CONNECTING"
+                self.application_state = "CONNECTING"
+                self.closed = False
+                self.close_code = None
+                self.close_reason = None
+                
+            async def accept(self, subprotocol=None):
+                self.accepted_subprotocol = subprotocol
+                self.client_state = "CONNECTED"
+                self.application_state = "CONNECTED"
+                
+            async def send(self, message):
+                # For HTTP endpoint, we'll handle this differently
+                pass
+                
+            async def receive(self):
+                # For HTTP endpoint, we'll handle this differently
+                return {"type": "websocket.disconnect", "code": 1000}
+                
+            async def close(self, code=1000, reason=None):
+                self.closed = True
+                self.close_code = code
+                self.close_reason = reason
+
+        # Create mock WebSocket
+        mock_websocket = MockWebSocket(request)
+        
+        # Add websocket to data
+        data["websocket"] = mock_websocket
+
+        # Set up scope for realtime processing
+        headers_list = list(request.scope.get("headers", []))
+        scope = REALTIME_REQUEST_SCOPE_TEMPLATE.copy()
+        scope["headers"] = headers_list
+
+        realtime_request = Request(scope=scope)
+        realtime_request._url = request.url
+
+        async def return_body():
+            return _realtime_request_body(model)
+
+        realtime_request.body = return_body  # type: ignore
+
+        ### ROUTE THE REQUEST ###
+        base_llm_response_processor = ProxyBaseLLMRequestProcessing(data=data)
+        
+        (
+            data,
+            litellm_logging_obj,
+        ) = await base_llm_response_processor.common_processing_pre_call_logic(
+            request=realtime_request,
+            general_settings=general_settings,
+            user_api_key_dict=user_api_key_dict,
+            version=version,
+            proxy_logging_obj=proxy_logging_obj,
+            proxy_config=proxy_config,
+            user_model=user_model,
+            user_temperature=user_temperature,
+            user_request_timeout=user_request_timeout,
+            user_max_tokens=user_max_tokens,
+            user_api_base=user_api_base,
+            model=model,
+            route_type="_arealtime",
+        )
+
+        # Route the request to the appropriate LLM provider
+        llm_call = await route_request(
+            data=data,
+            route_type="_arealtime",
+            llm_router=llm_router,
+            user_model=user_model,
+        )
+
+        # Execute the LLM call
+        response = await llm_call
+
+        ### ALERTING ###
+        asyncio.create_task(
+            proxy_logging_obj.update_request_status(
+                litellm_call_id=data.get("litellm_call_id", ""), status="success"
+            )
+        )
+
+        ### RESPONSE HEADERS ###
+        hidden_params = getattr(response, "_hidden_params", {}) or {}
+        model_id = hidden_params.get("model_id", None) or ""
+        cache_key = hidden_params.get("cache_key", None) or ""
+        api_base = hidden_params.get("api_base", None) or ""
+
+        fastapi_response.headers.update(
+            ProxyBaseLLMRequestProcessing.get_custom_headers(
+                user_api_key_dict=user_api_key_dict,
+                model_id=model_id,
+                cache_key=cache_key,
+                api_base=api_base,
+                version=version,
+                model_region=getattr(user_api_key_dict, "allowed_model_region", ""),
+                request_data=data,
+                hidden_params=hidden_params,
+            )
+        )
+
+        # Return a success response for HTTP endpoint
+        return {
+            "status": "success",
+            "message": "Realtime session initiated successfully",
+            "model": model,
+            "intent": intent,
+            "session_id": data.get("litellm_call_id", str(uuid())),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        await proxy_logging_obj.post_call_failure_hook(
+            user_api_key_dict=user_api_key_dict, original_exception=e, request_data=data
+        )
+        verbose_proxy_logger.exception(
+            "litellm.proxy.proxy_server.realtime_http_endpoint(): Exception occured - {}".format(
+                str(e)
+            )
+        )
+        if isinstance(e, HTTPException):
+            raise ProxyException(
+                message=getattr(e, "message", str(e.detail)),
+                type=getattr(e, "type", "None"),
+                param=getattr(e, "param", "None"),
+                code=getattr(e, "status_code", status.HTTP_400_BAD_REQUEST),
+            )
+        else:
+            error_msg = f"{str(e)}"
+            raise ProxyException(
+                message=getattr(e, "message", error_msg),
+                type=getattr(e, "type", "None"),
+                param=getattr(e, "param", "None"),
+                code=getattr(e, "status_code", 500),
+            )
+
+
 ######################################################################
 
 #                          /v1/assistant Endpoints
