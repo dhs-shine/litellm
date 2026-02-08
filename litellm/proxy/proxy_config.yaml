@@ -50,6 +50,7 @@ mcp_servers:
 general_settings:
   master_key: sk-1234
   store_model_in_db: false
+  custom_auth: litellm.proxy.keycloak_auth.keycloak_auth
 
 # LiteLLM Settings
 litellm_settings:
