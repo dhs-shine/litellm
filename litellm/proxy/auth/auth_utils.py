@@ -1,8 +1,9 @@
 import os
+import ipaddress
 import re
 import sys
 from functools import lru_cache
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from fastapi import HTTPException, Request, status
 
@@ -48,6 +49,87 @@ def _check_valid_ip(
         return False, client_ip
 
     return True, client_ip
+
+
+def _ip_in_cidr_ranges(client_ip: Optional[str], cidr_ranges: List[str]) -> bool:
+    """Return True when client_ip is in any configured CIDR range."""
+    if not client_ip:
+        return False
+
+    # XFF chains can include commas. leftmost = original client.
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+
+    try:
+        parsed_ip = ipaddress.ip_address(client_ip.strip())
+    except ValueError:
+        return False
+
+    for cidr in cidr_ranges:
+        try:
+            if parsed_ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            verbose_proxy_logger.warning(
+                "Invalid CIDR in model_ip_policies allow_cidrs: %s", cidr
+            )
+            continue
+    return False
+
+
+def _model_matches_pattern(model: str, pattern: str) -> bool:
+    if pattern == model:
+        return True
+    if pattern.endswith("*"):
+        return model.startswith(pattern[:-1])
+    return False
+
+
+def check_model_ip_policy(
+    model: Optional[Union[str, List[str]]],
+    request: Request,
+    general_settings: dict,
+) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Validate model-specific IP CIDR policies.
+
+    Returns:
+    - is_valid
+    - client_ip
+    - matched_model_pattern
+    """
+    model_ip_policies = general_settings.get("model_ip_policies")
+    if not model_ip_policies or model is None:
+        return True, None, None
+
+    model_list: List[str] = model if isinstance(model, list) else [model]
+    if len(model_list) == 0:
+        return True, None, None
+
+    from litellm.proxy.auth.ip_address_utils import IPAddressUtils
+
+    client_ip = IPAddressUtils.get_mcp_client_ip(
+        request=request,
+        general_settings=general_settings,
+    )
+
+    for requested_model in model_list:
+        for policy in model_ip_policies:
+            policy_model = policy.get("model") if isinstance(policy, dict) else None
+            allow_cidrs = (
+                policy.get("allow_cidrs", []) if isinstance(policy, dict) else []
+            )
+            if not policy_model or not isinstance(allow_cidrs, list):
+                continue
+
+            if not _model_matches_pattern(requested_model, policy_model):
+                continue
+
+            if _ip_in_cidr_ranges(client_ip=client_ip, cidr_ranges=allow_cidrs):
+                break
+
+            return False, client_ip, requested_model
+
+    return True, client_ip, None
 
 
 def check_complete_credentials(request_body: dict) -> bool:

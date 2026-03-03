@@ -1985,6 +1985,19 @@ class UserHeaderMapping(LiteLLMPydanticObjectBase):
 UserMCPManagementMode = Literal["restricted", "view_all"]
 
 
+class ModelIPPolicy(LiteLLMPydanticObjectBase):
+    """Model-level IP access policy."""
+
+    model: str = Field(
+        ...,
+        description="Model name or wildcard pattern (e.g. `anthropic/*`) to apply IP restrictions to.",
+    )
+    allow_cidrs: List[str] = Field(
+        ...,
+        description="List of CIDR ranges allowed to call the model.",
+    )
+
+
 class ConfigGeneralSettings(LiteLLMPydanticObjectBase):
     """
     Documents all the fields supported by `general_settings` in config.yaml
@@ -2121,6 +2134,10 @@ class ConfigGeneralSettings(LiteLLMPydanticObjectBase):
     mcp_trusted_proxy_ranges: Optional[List[str]] = Field(
         None,
         description="CIDR ranges of trusted reverse proxies. When set, X-Forwarded-For headers are only trusted from these IPs.",
+    )
+    model_ip_policies: Optional[List[ModelIPPolicy]] = Field(
+        default=None,
+        description="Per-model IP allow policies. If request model matches policy `model`, caller IP must be in one of `allow_cidrs`.",
     )
 
 
