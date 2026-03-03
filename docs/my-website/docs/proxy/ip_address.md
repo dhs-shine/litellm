@@ -26,3 +26,22 @@ general_settings:
     }
 }
 ```
+
+## Model-specific IP CIDR policies
+
+You can additionally restrict specific models to specific CIDR ranges using `general_settings.model_ip_policies`.
+
+```yaml
+general_settings:
+  use_x_forwarded_for: true
+  model_ip_policies:
+    - model: "gpt-4o"
+      allow_cidrs: ["10.20.0.0/16", "192.168.100.0/24"]
+    - model: "anthropic/*"
+      allow_cidrs: ["172.16.0.0/12"]
+```
+
+- `model` supports exact match and `*` suffix wildcard patterns.
+- If the request model matches a policy and client IP is outside `allow_cidrs`, the request is rejected with HTTP 403.
+- For deployments behind reverse proxies, set `use_x_forwarded_for: true` and configure trusted proxy ranges to avoid spoofed `X-Forwarded-For` headers.
+

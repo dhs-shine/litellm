@@ -1414,3 +1414,49 @@ async def test_get_fuzzy_user_object_case_insensitive_email():
     assert call_args.kwargs["where"]["user_email"]["equals"] == "test@example.com"
     assert call_args.kwargs["where"]["user_email"]["mode"] == "insensitive"
     assert call_args.kwargs["include"] == {"organization_memberships": True}
+
+
+@pytest.mark.parametrize(
+    "model, policies, client_ip, expected_allowed",
+    [
+        (
+            "gpt-4o",
+            [{"model": "gpt-4o", "allow_cidrs": ["10.0.0.0/8"]}],
+            "10.1.2.3",
+            True,
+        ),
+        (
+            "gpt-4o",
+            [{"model": "gpt-4o", "allow_cidrs": ["10.0.0.0/8"]}],
+            "203.0.113.10",
+            False,
+        ),
+        (
+            "anthropic/claude-3-5-sonnet",
+            [{"model": "anthropic/*", "allow_cidrs": ["172.16.0.0/12"]}],
+            "172.20.10.5",
+            True,
+        ),
+        (
+            "anthropic/claude-3-5-sonnet",
+            [{"model": "anthropic/*", "allow_cidrs": ["172.16.0.0/12"]}],
+            "192.168.1.2",
+            False,
+        ),
+    ],
+)
+def test_check_model_ip_policy(model, policies, client_ip, expected_allowed):
+    from litellm.proxy.auth.auth_utils import check_model_ip_policy
+
+    request = MagicMock()
+    general_settings = {"model_ip_policies": policies}
+
+    with patch(
+        "litellm.proxy.auth.ip_address_utils.IPAddressUtils.get_mcp_client_ip",
+        return_value=client_ip,
+    ):
+        is_valid, _, _ = check_model_ip_policy(
+            model=model, request=request, general_settings=general_settings
+        )
+
+    assert is_valid is expected_allowed

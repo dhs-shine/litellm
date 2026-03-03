@@ -62,7 +62,7 @@ from litellm.router import Router
 from litellm.utils import get_utc_datetime
 
 from .auth_checks_organization import organization_role_based_access_check
-from .auth_utils import get_model_from_request
+from .auth_utils import check_model_ip_policy, get_model_from_request
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span as _Span
@@ -203,6 +203,20 @@ async def common_checks(
     _model: Optional[Union[str, List[str]]] = get_model_from_request(
         request_body, route
     )
+
+    # 0. If model has IP-based policy, check caller IP
+    is_valid_model_ip, requester_ip, denied_model = check_model_ip_policy(
+        model=_model,
+        request=request,
+        general_settings=general_settings,
+    )
+    if not is_valid_model_ip:
+        raise ProxyException(
+            message=f"Access forbidden: Model {denied_model} not allowed for IP {requester_ip}.",
+            type=ProxyErrorTypes.auth_error,
+            param="model",
+            code=status.HTTP_403_FORBIDDEN,
+        )
 
     # 1. If team is blocked
     if team_object is not None and team_object.blocked is True:

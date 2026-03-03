@@ -75,6 +75,7 @@ from litellm.proxy._types import (
     LiteLLM_TeamTable,
     LiteLLM_UserTable,
     LitellmUserRoles,
+    ModelIPPolicy,
     PassThroughGenericEndpoint,
     ProxyErrorTypes,
     ProxyException,
@@ -11321,6 +11322,7 @@ async def get_config_list(
         "maximum_spend_logs_retention_period": {"type": "String"},
         "mcp_internal_ip_ranges": {"type": "List"},
         "mcp_trusted_proxy_ranges": {"type": "List"},
+        "model_ip_policies": {"type": "PydanticModel"},
     }
 
     return_val = []
@@ -11334,6 +11336,8 @@ async def get_config_list(
             if typed_dict_type == "PydanticModel":
                 if field_name == "pass_through_endpoints":
                     pydantic_class_list = [PassThroughGenericEndpoint]
+                elif field_name == "model_ip_policies":
+                    pydantic_class_list = [ModelIPPolicy]
                 else:
                     pydantic_class_list = []
 

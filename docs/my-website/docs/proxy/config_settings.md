@@ -251,6 +251,7 @@ router_settings:
 | alerting_args | dict | Args for Slack Alerting [Doc on Slack Alerting](./alerting.md) |
 | custom_key_generate | str | Custom function for key generation [Doc on custom key generation](./virtual_keys.md#custom--key-generate) |
 | allowed_ips | List[str] | List of IPs allowed to access the proxy. If not set, all IPs are allowed. |
+| model_ip_policies | List[ModelIPPolicy] | Per-model IP allow policy. If a request model matches policy `model`, client IP must be inside one of `allow_cidrs` CIDRs. Example: `[{"model":"gpt-4o","allow_cidrs":["10.0.0.0/8"]}]`. |
 | embedding_model | str | The default model to use for embeddings - ignores model set in request |
 | default_team_disabled | boolean | If true, users cannot create 'personal' keys (keys with no team_id). |
 | alert_to_webhook_url | Dict[str] | [Specify a webhook url for each alert type.](./alerting.md#set-specific-slack-channels-per-alert-type) |
