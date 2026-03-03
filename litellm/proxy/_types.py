@@ -2122,6 +2122,10 @@ class ConfigGeneralSettings(LiteLLMPydanticObjectBase):
         None,
         description="CIDR ranges of trusted reverse proxies. When set, X-Forwarded-For headers are only trusted from these IPs.",
     )
+    model_ip_policies: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description="Model-level IP access policies. Each item supports {'model': 'pattern', 'allow_cidrs': ['10.0.0.0/8']} and optional 'allowed_ips' for backward compatibility.",
+    )
 
 
 class ConfigYAML(LiteLLMPydanticObjectBase):

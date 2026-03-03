@@ -1,11 +1,14 @@
+import ipaddress
 import os
 import re
 import sys
+from fnmatch import fnmatch
 from functools import lru_cache
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from fastapi import HTTPException, Request, status
 
+import litellm
 from litellm import Router, provider_list
 from litellm._logging import verbose_proxy_logger
 from litellm.constants import STANDARD_CUSTOMER_ID_HEADERS
@@ -26,6 +29,49 @@ def _get_request_ip_address(
 
     return client_ip
 
+def _normalize_client_ip(client_ip: Optional[str]) -> str:
+    """Normalize client IP, handling comma-separated X-Forwarded-For chains."""
+    if not client_ip:
+        return ""
+
+    normalized_ip = client_ip.strip()
+    if "," in normalized_ip:
+        normalized_ip = normalized_ip.split(",")[0].strip()
+
+    return normalized_ip
+
+
+def _check_ip_in_allowlist(client_ip: Optional[str], allowed_ips: List[str]) -> bool:
+    """
+    Check if an IP is in allowlist entries.
+
+    Supports exact IP matching and CIDR ranges.
+    """
+    normalized_ip = _normalize_client_ip(client_ip)
+    if normalized_ip == "":
+        return False
+
+    # Backwards compatible exact-match check first
+    if normalized_ip in allowed_ips:
+        return True
+
+    try:
+        client_addr = ipaddress.ip_address(normalized_ip)
+    except ValueError:
+        return False
+
+    for allowed_entry in allowed_ips:
+        try:
+            network = ipaddress.ip_network(allowed_entry, strict=False)
+            if client_addr in network:
+                return True
+        except ValueError:
+            # Ignore malformed CIDR entries and keep checking exact matches only
+            continue
+
+    return False
+
+
 
 def _check_valid_ip(
     allowed_ips: Optional[List[str]],
@@ -44,10 +90,98 @@ def _check_valid_ip(
     )
 
     # Check if IP address is allowed
-    if client_ip not in allowed_ips:
+    if not _check_ip_in_allowlist(client_ip=client_ip, allowed_ips=allowed_ips):
         return False, client_ip
 
     return True, client_ip
+
+
+
+
+def _model_matches_policy(model: str, policy_model: str) -> bool:
+    """Supports exact and wildcard model pattern matching."""
+    return model == policy_model or fnmatch(model, policy_model)
+
+
+def _get_request_client_ip(
+    request: Request,
+    use_x_forwarded_for: Optional[bool] = False,
+    trusted_proxy_ranges: Optional[List[str]] = None,
+) -> Optional[str]:
+    """
+    Resolve client IP with optional trusted proxy enforcement for XFF.
+    """
+    if use_x_forwarded_for:
+        from litellm.proxy.auth.ip_address_utils import IPAddressUtils
+
+        return IPAddressUtils.get_mcp_client_ip(
+            request=request,
+            general_settings={
+                "use_x_forwarded_for": use_x_forwarded_for,
+                "mcp_trusted_proxy_ranges": trusted_proxy_ranges,
+            },
+        )
+
+    return _get_request_ip_address(request=request, use_x_forwarded_for=False)
+
+
+def _check_model_ip_restrictions(
+    model: Union[str, List[str], None],
+    model_ip_policies: Optional[List[Dict[str, Any]]],
+    client_ip: Optional[str],
+    llm_router: Optional[Router] = None,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Return whether the client IP can access requested model(s) under model_ip_policies.
+
+    - If no policies configured, request is allowed.
+    - If model has a matching policy, IP must be in policy allowlist.
+    - If model has no matching policy, it is unrestricted by this check.
+    """
+    if not model_ip_policies:
+        return True, None
+
+    models_to_check: List[str] = model if isinstance(model, list) else [model] if model else []
+    normalized_ip = _normalize_client_ip(client_ip)
+
+    for requested_model in models_to_check:
+        candidate_models = [requested_model]
+
+        # Include aliases for parity with model access checks
+        if requested_model in litellm.model_alias_map:
+            candidate_models.append(litellm.model_alias_map[requested_model])
+        elif llm_router and requested_model in llm_router.model_group_alias:
+            resolved_model = llm_router._get_model_from_alias(requested_model)
+            if resolved_model:
+                candidate_models.append(resolved_model)
+
+        matched_policies = []
+        for policy in model_ip_policies:
+            policy_model = policy.get("model")
+            if not isinstance(policy_model, str) or policy_model == "":
+                continue
+            if any(
+                _model_matches_policy(cand_model, policy_model)
+                for cand_model in candidate_models
+            ):
+                matched_policies.append(policy)
+
+        if len(matched_policies) == 0:
+            continue
+
+        is_allowed = False
+        for policy in matched_policies:
+            allowed_list = policy.get("allow_cidrs") or policy.get("allowed_ips") or []
+            if not isinstance(allowed_list, list):
+                continue
+            if _check_ip_in_allowlist(client_ip=normalized_ip, allowed_ips=allowed_list):
+                is_allowed = True
+                break
+
+        if not is_allowed:
+            return False, requested_model
+
+    return True, None
 
 
 def check_complete_credentials(request_body: dict) -> bool:
@@ -223,6 +357,26 @@ async def pre_db_read_auth_checks(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access forbidden: IP address {passed_in_ip} not allowed.",
+        )
+
+    # Check 3.1 Check if model-level IP policies are configured
+    _requested_model = get_model_from_request(request_data=request_data, route=route)
+    _request_client_ip = _get_request_client_ip(
+        request=request,
+        use_x_forwarded_for=general_settings.get("use_x_forwarded_for", False),
+        trusted_proxy_ranges=general_settings.get("mcp_trusted_proxy_ranges"),
+    )
+    _model_ip_allowed, _blocked_model = _check_model_ip_restrictions(
+        model=_requested_model,
+        model_ip_policies=general_settings.get("model_ip_policies", None),
+        client_ip=_request_client_ip,
+        llm_router=llm_router,
+    )
+
+    if not _model_ip_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access forbidden: IP address {_request_client_ip} not allowed for model {_blocked_model}.",
         )
 
     # Check 4. Check if request route is an allowed route on the proxy
