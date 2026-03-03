@@ -32,7 +32,7 @@ class Request:
     def __init__(self, client_ip: Optional[str] = None, headers: Optional[dict] = None):
         self.client = MagicMock()
         self.client.host = client_ip
-        self.headers: Dict[str, str] = {}
+        self.headers: Dict[str, str] = headers or {}
 
 
 @pytest.mark.parametrize(
@@ -58,6 +58,60 @@ def test_check_valid_ip(
     request = Request(client_ip)
 
     assert _check_valid_ip(allowed_ips, request)[0] == expected_result  # type: ignore
+
+
+@pytest.mark.parametrize(
+    "allowed_ips, client_ip, expected_result",
+    [
+        (["10.0.0.0/8"], "10.1.2.3", True),
+        (["10.0.0.0/8"], "11.1.2.3", False),
+        (["192.168.1.0/24", "10.0.0.0/8"], "192.168.1.10", True),
+        (["invalid-cidr", "127.0.0.1"], "127.0.0.1", True),
+    ],
+)
+def test_check_valid_ip_with_cidr(
+    allowed_ips: Optional[List[str]], client_ip: Optional[str], expected_result: bool
+):
+    from litellm.proxy.auth.auth_utils import _check_valid_ip
+
+    request = Request(client_ip)
+
+    assert _check_valid_ip(allowed_ips, request)[0] == expected_result  # type: ignore
+
+
+def test_check_model_ip_restrictions():
+    from litellm.proxy.auth.auth_utils import _check_model_ip_restrictions
+
+    policies = [
+        {"model": "gpt-4o", "allow_cidrs": ["10.0.0.0/8"]},
+        {"model": "anthropic/*", "allow_cidrs": ["192.168.0.0/16"]},
+    ]
+
+    is_allowed, blocked_model = _check_model_ip_restrictions(
+        model="gpt-4o", model_ip_policies=policies, client_ip="10.1.1.1"
+    )
+    assert is_allowed is True
+    assert blocked_model is None
+
+    is_allowed, blocked_model = _check_model_ip_restrictions(
+        model="gpt-4o", model_ip_policies=policies, client_ip="8.8.8.8"
+    )
+    assert is_allowed is False
+    assert blocked_model == "gpt-4o"
+
+    is_allowed, blocked_model = _check_model_ip_restrictions(
+        model="anthropic/claude-3-5-sonnet",
+        model_ip_policies=policies,
+        client_ip="192.168.10.10",
+    )
+    assert is_allowed is True
+    assert blocked_model is None
+
+    is_allowed, blocked_model = _check_model_ip_restrictions(
+        model="gpt-3.5-turbo", model_ip_policies=policies, client_ip="8.8.8.8"
+    )
+    assert is_allowed is True
+    assert blocked_model is None
 
 
 # test x-forwarder for is used when user has opted in
